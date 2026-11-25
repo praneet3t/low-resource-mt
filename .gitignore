@@ -20,7 +20,7 @@
 !/results/history/
 !/results/history/*.json
 
-!/bonus_evaluation.py
-!/results/bonus-evaluation.csv
-!/bonus_decoding.py
-!/results/bonus-decoding.csv
+!/additional_evaluation.py
+!/results/additional-evaluation.csv
+!/decoding_pilot.py
+!/results/additional-decoding.csv

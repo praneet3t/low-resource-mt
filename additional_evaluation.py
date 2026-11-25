@@ -64,8 +64,8 @@ if __name__ == "__main__":
         parser.error("--resamples must be positive")
     summary = evaluate(args.root, args.resamples, args.seed)
     args.output.mkdir(parents=True, exist_ok=True)
-    write_json(args.output / "bonus-evaluation.json", summary)
-    with (args.output / "bonus-evaluation.csv").open("w", encoding="utf-8", newline="") as handle:
+    write_json(args.output / "additional-evaluation.json", summary)
+    with (args.output / "additional-evaluation.csv").open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(summary["rows"][0]), lineterminator="\n")
         writer.writeheader()
         writer.writerows(summary["rows"])

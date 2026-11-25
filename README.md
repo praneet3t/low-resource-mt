@@ -35,11 +35,11 @@ python results.py
 
 ## Additional evaluation
 
-The pilot uses 12 fixed test examples per direction, seed 42, and a 128-token decoding cap. See [pilot scores](results/bonus-decoding.csv), [TER and bootstrap intervals](results/bonus-evaluation.csv), and [pilot translations](https://github.com/praneet3t/low-resource-mt/releases/download/study-v1/bonus-translations.tar.gz). The full-holdout TER and bootstrap analysis only reads saved translations. To run it without retraining, unpack the [original archive](https://github.com/praneet3t/low-resource-mt/releases/download/study-v1/low-resource-mt-results.tar.gz) and pass its extracted directory as `--root`.
+The pilot uses 12 fixed test examples per direction, seed 42, and a 128-token decoding cap. See [pilot scores](results/additional-decoding.csv), [TER and bootstrap intervals](results/additional-evaluation.csv), and [pilot translations](https://github.com/praneet3t/low-resource-mt/releases/download/study-v1/decoding-pilot-translations.tar.gz). The full-holdout TER and bootstrap analysis only reads saved translations. To run it without retraining, unpack the [original archive](https://github.com/praneet3t/low-resource-mt/releases/download/study-v1/low-resource-mt-results.tar.gz) and pass its extracted directory as `--root`.
 
 ```sh
-python bonus_evaluation.py --seed 42 --resamples 2000
-python bonus_decoding.py gemma --batch 16 --output runs/bonus/gemma
-python bonus_decoding.py madlad --batch 4 --output runs/bonus/madlad
+python additional_evaluation.py --seed 42 --resamples 2000
+python decoding_pilot.py gemma --batch 16 --output runs/decoding-pilot/gemma
+python decoding_pilot.py madlad --batch 4 --output runs/decoding-pilot/madlad
 python results.py
 ```
