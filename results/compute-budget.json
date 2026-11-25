@@ -1,0 +1,51 @@
+{
+  "gpu": "NVIDIA A40",
+  "rate_per_hour": 0.59,
+  "estimated_compute_hours_before_validation_and_load": 2.729310454559239,
+  "estimated_compute_cost_before_validation_and_load": 1.6102931681899508,
+  "approved_max_hours": 5,
+  "approved_max_estimated_rental_cost": 2.95,
+  "directed_counts": {
+    "train": 70608,
+    "validation": 3274,
+    "test": 3274,
+    "official": 4000
+  },
+  "models": {
+    "madlad": {
+      "training": {
+        "batch": 32,
+        "checkpointing": true,
+        "examples_per_second": 20.088818192429134,
+        "peak_reserved_gib": 23.693359375,
+        "accumulation": 2,
+        "estimated_seconds": 3514.791130252252
+      },
+      "generation": {
+        "batch": 64,
+        "examples_per_second": 6.603101465408136,
+        "peak_reserved_gib": 26.890625,
+        "estimated_seconds": 2203.2070953646617
+      }
+    },
+    "gemma": {
+      "training": {
+        "batch": 16,
+        "checkpointing": true,
+        "examples_per_second": 37.43775702600349,
+        "peak_reserved_gib": 35.103515625,
+        "accumulation": 4,
+        "estimated_seconds": 1886.010423940653
+      },
+      "generation": {
+        "batch": 64,
+        "examples_per_second": 6.548701844592187,
+        "peak_reserved_gib": 3.029296875,
+        "estimated_seconds": 2221.5089868556934
+      }
+    }
+  },
+  "currency": "USD",
+  "elapsed_hours_from_approval_to_last_generation": 2.7999784582191043,
+  "elapsed_cost_at_listed_rate": 1.65
+}

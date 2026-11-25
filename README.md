@@ -40,3 +40,9 @@ The archive has parallel training workbooks and source-only official test workbo
 Train one epoch on both directions of every retained pair, with seed 42, BF16 on the A40, double-quantized NF4, AdamW, a linear learning-rate schedule starting at 2e-4, and rank-16/alpha-32 adapters on the attention query and value projections. The training and validation input and target token budgets are 256 each. Gemma uses a target-only causal loss, including its end-of-turn token. Select by lowest validation loss among quarter-epoch checkpoints including the final step.
 
 MADLAD input is `<2{target}> {source}`. Gemma uses its official chat template and a single user message. The message is `Translate the following text from {source language} to {target language}. Return only the translation.` followed by two newlines and the source. Both baseline and adapter evaluations use BF16 greedy decoding with at most 256 new tokens. Report case-sensitive corpus BLEU with 13a tokenization and chrF++ with word order 2.
+
+## Study results
+
+- [Aggregate scores](results/scores.json), [corpus statistics](results/eda.json), and [error diagnostics](results/diagnostics.json)
+- [Sentence lengths](results/lengths.pdf), [score changes](results/improvements.pdf), and [training curves](results/training.pdf)
+- [Report and complete results archive](https://github.com/praneet3t/low-resource-mt/releases/tag/study-v1)

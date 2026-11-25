@@ -1,0 +1,182 @@
+{
+  "madlad": {
+    "en-kha": {
+      "base": {
+        "empty": 0,
+        "exact_normalized_source_copy": 1,
+        "embedded_source_copy": 0,
+        "missing_shared_numeral": 0,
+        "short_output": 12,
+        "repeated_trigram": 356,
+        "unexpected_majority_script": 0,
+        "replacement_character": 0
+      },
+      "tuned": {
+        "empty": 0,
+        "exact_normalized_source_copy": 0,
+        "embedded_source_copy": 0,
+        "missing_shared_numeral": 0,
+        "short_output": 17,
+        "repeated_trigram": 244,
+        "unexpected_majority_script": 0,
+        "replacement_character": 0
+      }
+    },
+    "kha-en": {
+      "base": {
+        "empty": 0,
+        "exact_normalized_source_copy": 2,
+        "embedded_source_copy": 0,
+        "missing_shared_numeral": 0,
+        "short_output": 43,
+        "repeated_trigram": 24,
+        "unexpected_majority_script": 0,
+        "replacement_character": 0
+      },
+      "tuned": {
+        "empty": 0,
+        "exact_normalized_source_copy": 0,
+        "embedded_source_copy": 0,
+        "missing_shared_numeral": 0,
+        "short_output": 27,
+        "repeated_trigram": 54,
+        "unexpected_majority_script": 0,
+        "replacement_character": 0
+      }
+    },
+    "en-brx": {
+      "base": {
+        "empty": 1,
+        "exact_normalized_source_copy": 110,
+        "embedded_source_copy": 73,
+        "missing_shared_numeral": 10,
+        "short_output": 118,
+        "repeated_trigram": 104,
+        "unexpected_majority_script": 432,
+        "replacement_character": 0
+      },
+      "tuned": {
+        "empty": 0,
+        "exact_normalized_source_copy": 0,
+        "embedded_source_copy": 0,
+        "missing_shared_numeral": 3,
+        "short_output": 0,
+        "repeated_trigram": 109,
+        "unexpected_majority_script": 0,
+        "replacement_character": 0
+      }
+    },
+    "brx-en": {
+      "base": {
+        "empty": 0,
+        "exact_normalized_source_copy": 0,
+        "embedded_source_copy": 0,
+        "missing_shared_numeral": 13,
+        "short_output": 2,
+        "repeated_trigram": 23,
+        "unexpected_majority_script": 0,
+        "replacement_character": 0
+      },
+      "tuned": {
+        "empty": 0,
+        "exact_normalized_source_copy": 0,
+        "embedded_source_copy": 0,
+        "missing_shared_numeral": 8,
+        "short_output": 2,
+        "repeated_trigram": 8,
+        "unexpected_majority_script": 0,
+        "replacement_character": 0
+      }
+    }
+  },
+  "gemma": {
+    "en-kha": {
+      "base": {
+        "empty": 0,
+        "exact_normalized_source_copy": 11,
+        "embedded_source_copy": 19,
+        "missing_shared_numeral": 3,
+        "short_output": 281,
+        "repeated_trigram": 478,
+        "unexpected_majority_script": 3,
+        "replacement_character": 0
+      },
+      "tuned": {
+        "empty": 0,
+        "exact_normalized_source_copy": 0,
+        "embedded_source_copy": 0,
+        "missing_shared_numeral": 1,
+        "short_output": 28,
+        "repeated_trigram": 941,
+        "unexpected_majority_script": 6,
+        "replacement_character": 0
+      }
+    },
+    "kha-en": {
+      "base": {
+        "empty": 0,
+        "exact_normalized_source_copy": 10,
+        "embedded_source_copy": 9,
+        "missing_shared_numeral": 2,
+        "short_output": 65,
+        "repeated_trigram": 322,
+        "unexpected_majority_script": 0,
+        "replacement_character": 0
+      },
+      "tuned": {
+        "empty": 0,
+        "exact_normalized_source_copy": 0,
+        "embedded_source_copy": 0,
+        "missing_shared_numeral": 1,
+        "short_output": 29,
+        "repeated_trigram": 540,
+        "unexpected_majority_script": 0,
+        "replacement_character": 0
+      }
+    },
+    "en-brx": {
+      "base": {
+        "empty": 0,
+        "exact_normalized_source_copy": 34,
+        "embedded_source_copy": 1,
+        "missing_shared_numeral": 9,
+        "short_output": 15,
+        "repeated_trigram": 0,
+        "unexpected_majority_script": 597,
+        "replacement_character": 0
+      },
+      "tuned": {
+        "empty": 0,
+        "exact_normalized_source_copy": 0,
+        "embedded_source_copy": 0,
+        "missing_shared_numeral": 58,
+        "short_output": 43,
+        "repeated_trigram": 556,
+        "unexpected_majority_script": 2,
+        "replacement_character": 0
+      }
+    },
+    "brx-en": {
+      "base": {
+        "empty": 0,
+        "exact_normalized_source_copy": 0,
+        "embedded_source_copy": 0,
+        "missing_shared_numeral": 31,
+        "short_output": 30,
+        "repeated_trigram": 71,
+        "unexpected_majority_script": 5,
+        "replacement_character": 0
+      },
+      "tuned": {
+        "empty": 0,
+        "exact_normalized_source_copy": 0,
+        "embedded_source_copy": 0,
+        "missing_shared_numeral": 38,
+        "short_output": 19,
+        "repeated_trigram": 11,
+        "unexpected_majority_script": 0,
+        "replacement_character": 0
+      }
+    }
+  }
+}

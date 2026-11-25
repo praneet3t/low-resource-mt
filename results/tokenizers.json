@@ -1,0 +1,78 @@
+{
+  "madlad400-3b-mt": {
+    "en": {
+      "sample": 1000,
+      "subwords": {
+        "min": 4,
+        "median": 36.0,
+        "mean": 39.223,
+        "p95": 70,
+        "max": 112
+      },
+      "unknown_tokens": 0,
+      "subwords_per_whitespace_token": 1.311981535991437
+    },
+    "kha": {
+      "sample": 1000,
+      "subwords": {
+        "min": 6,
+        "median": 43.0,
+        "mean": 46.589,
+        "p95": 82,
+        "max": 139
+      },
+      "unknown_tokens": 0,
+      "subwords_per_whitespace_token": 1.2723325231449873
+    },
+    "brx": {
+      "sample": 1000,
+      "subwords": {
+        "min": 11,
+        "median": 37.0,
+        "mean": 38.458,
+        "p95": 64,
+        "max": 106
+      },
+      "unknown_tokens": 0,
+      "subwords_per_whitespace_token": 2.814343212586901
+    }
+  },
+  "gemma-3-1b-it": {
+    "en": {
+      "sample": 1000,
+      "subwords": {
+        "min": 3,
+        "median": 30.0,
+        "mean": 32.269,
+        "p95": 58,
+        "max": 92
+      },
+      "unknown_tokens": 0,
+      "subwords_per_whitespace_token": 1.0793751672464544
+    },
+    "kha": {
+      "sample": 1000,
+      "subwords": {
+        "min": 5,
+        "median": 52.0,
+        "mean": 55.799,
+        "p95": 98,
+        "max": 161
+      },
+      "unknown_tokens": 0,
+      "subwords_per_whitespace_token": 1.5238550400087392
+    },
+    "brx": {
+      "sample": 1000,
+      "subwords": {
+        "min": 12,
+        "median": 44.0,
+        "mean": 46.281,
+        "p95": 78,
+        "max": 121
+      },
+      "unknown_tokens": 0,
+      "subwords_per_whitespace_token": 3.386827661909989
+    }
+  }
+}

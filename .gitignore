@@ -5,3 +5,9 @@
 !/prepare.py
 !/study.py
 !/results.py
+
+!/results/
+!/results/*.json
+!/results/*.pdf
+!/results/*.png
+!/results/*.svg

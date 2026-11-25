@@ -1,0 +1,115 @@
+{
+  "kha": {
+    "usable_rows": 26000,
+    "exact_pair_duplicates": 1,
+    "normalized_pair_duplicates": 14,
+    "normalized_identical_sides": 0,
+    "word_ratio_outliers": 91,
+    "english_whitespace_tokens": {
+      "min": 2,
+      "median": 28.0,
+      "mean": 29.949576923076922,
+      "p95": 54,
+      "max": 1249
+    },
+    "target_whitespace_tokens": {
+      "min": 2,
+      "median": 34.0,
+      "mean": 36.49434615384615,
+      "p95": 65,
+      "max": 1724
+    },
+    "english_characters": {
+      "min": 6,
+      "median": 130.0,
+      "mean": 139.0790769230769,
+      "p95": 249,
+      "max": 6109
+    },
+    "target_characters": {
+      "min": 7,
+      "median": 146.0,
+      "mean": 156.12207692307692,
+      "p95": 280,
+      "max": 7587
+    },
+    "english_scripts": {
+      "LATIN": 2737312
+    },
+    "target_scripts": {
+      "LATIN": 3027654
+    },
+    "target_without_expected_letters": 0,
+    "excel_escape_rows": 0,
+    "archaic_english_marker_rows": 6637,
+    "rejected": {},
+    "exclusions": {
+      "repeated_normalized_side": 169
+    },
+    "excluded_for_overlap": 169,
+    "train_pairs": 23831,
+    "validation_pairs": 1000,
+    "test_pairs": 1000
+  },
+  "brx": {
+    "usable_rows": 15214,
+    "exact_pair_duplicates": 2446,
+    "normalized_pair_duplicates": 2451,
+    "normalized_identical_sides": 0,
+    "word_ratio_outliers": 2,
+    "english_whitespace_tokens": {
+      "min": 1,
+      "median": 14.0,
+      "mean": 15.00059156040489,
+      "p95": 26,
+      "max": 57
+    },
+    "target_whitespace_tokens": {
+      "min": 1,
+      "median": 13.0,
+      "mean": 13.46956750361509,
+      "p95": 23,
+      "max": 53
+    },
+    "english_characters": {
+      "min": 7,
+      "median": 91.0,
+      "mean": 95.96266596555805,
+      "p95": 161,
+      "max": 308
+    },
+    "target_characters": {
+      "min": 7,
+      "median": 96.0,
+      "mean": 101.66774023925332,
+      "p95": 171,
+      "max": 334
+    },
+    "english_scripts": {
+      "LATIN": 1205299
+    },
+    "target_scripts": {
+      "DEVANAGARI": 751326,
+      "LATIN": 493
+    },
+    "target_without_expected_letters": 0,
+    "excel_escape_rows": 35,
+    "archaic_english_marker_rows": 2,
+    "rejected": {
+      "blank": 1
+    },
+    "exclusions": {
+      "repeated_normalized_side": 2467
+    },
+    "excluded_for_overlap": 2467,
+    "train_pairs": 11473,
+    "validation_pairs": 637,
+    "test_pairs": 637
+  },
+  "official": {
+    "en-kha": 1000,
+    "kha-en": 1000,
+    "en-brx": 1000,
+    "brx-en": 1000
+  }
+}
