@@ -301,8 +301,13 @@ def report(output, stats, scores, diagnostics, examples):
     {''.join(case_html)}
     <p>{observations}</p>
     <h2>References</h2>
-    <p>WMT 2026, Low-Resource Indic Language Translation shared task. Kudugunta et al.,
-    MADLAD-400 (2023). Google, Gemma 3 Technical Report (2025). Dettmers et al., QLoRA (2023).
+    <p>Pakray et al., <a href="https://aclanthology.org/2026.wmt-main.53/">WMT26 Indic MT findings</a>
+    (2026). Related shared-task findings appeared in
+    <a href="https://aclanthology.org/2023.wmt-1.56/">2023</a>,
+    <a href="https://aclanthology.org/2024.wmt-1.54/">2024</a>, and
+    <a href="https://aclanthology.org/2025.wmt-1.29/">2025</a>.
+    Kudugunta et al., MADLAD-400 (2023). Google, Gemma 3 Technical Report (2025).
+    Dettmers et al., QLoRA (2023).
     Post, A Call for Clarity in Reporting BLEU Scores (2018). Popović, chrF++ (2017).</p></section>
     """
     path = output / "report.pdf"
