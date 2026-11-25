@@ -22,6 +22,7 @@ DIRECTIONS = {"en-kha": "English → Khasi", "kha-en": "Khasi → English",
               "en-brx": "English → Bodo", "brx-en": "Bodo → English"}
 MODELS = {"madlad": "MADLAD-400 3B", "gemma": "Gemma 3 1B"}
 COLORS = ["#32618e", "#ad532c"]
+REVIEW_CASES = {("madlad", "en-brx"): "brx:13772", ("gemma", "kha-en"): "kha:19957"}
 
 
 def read(path):
@@ -129,6 +130,16 @@ def aggregate(root, output):
                     "base": base["translation"], "tuned": tuned["translation"],
                     "sentence_chrf_base": values[0], "sentence_chrf_tuned": values[1], "delta": change,
                 }
+            reviewed_id = REVIEW_CASES.get((model, direction))
+            if reviewed_id:
+                case = next((entry for entry in ranked if entry[1]["id"] == reviewed_id), None)
+                if case:
+                    change, base, tuned, values = case
+                    examples[model][direction]["reviewed"] = {
+                        "id": base["id"], "source": base["source"], "reference": base["reference"],
+                        "base": base["translation"], "tuned": tuned["translation"],
+                        "sentence_chrf_base": values[0], "sentence_chrf_tuned": values[1], "delta": change,
+                    }
             examples[model][direction]["flag_changes"] = {}
             for flag in ("exact_normalized_source_copy", "short_output", "repeated_trigram",
                          "unexpected_majority_script", "missing_shared_numeral"):
@@ -224,8 +235,9 @@ def report(output, stats, scores, diagnostics, examples):
             ])
     diagnostic_table = table(("Model", "Direction", "Source copy", "Short", "Repetition", "Script"), diagnostic_rows)
     case_html = []
-    for model, direction in (("madlad", "en-kha"), ("gemma", "en-brx")):
-        case = examples[model][direction]["median"]
+    for model, direction in REVIEW_CASES:
+        cases = examples[model][direction]
+        case = cases.get("reviewed", cases["median"])
         fields = "".join(f"<p><b>{label}</b> {escape(visible_text(case[key]))}</p>"
                          for label, key in (("Source", "source"), ("Reference", "reference"),
                                             ("Base", "base"), ("Tuned", "tuned")))
