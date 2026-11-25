@@ -3,6 +3,7 @@ from collections import Counter
 from html import escape
 import json
 from pathlib import Path
+import re
 import tarfile
 import unicodedata as ud
 
@@ -55,16 +56,25 @@ def eda(root, output):
     return stats
 
 
+def numeral_strings(text):
+    return {"".join(str(ud.decimal(char)) for char in value)
+            for value in re.findall(r"\d+", text)}
+
+
 def diagnostic(row):
     text = row["translation"]
     normal = normalize(text)
+    source = normalize(row["source"])
+    common_numerals = numeral_strings(row["source"]) & numeral_strings(row["reference"])
     words = text.casefold().split()
     trigrams = list(zip(words, words[1:], words[2:]))
     expected = "DEVANAGARI" if row["direction"].endswith("-brx") else "LATIN"
     letters = scripts(text)
     return {
         "empty": not normal,
-        "exact_normalized_source_copy": bool(normal) and normal == normalize(row["source"]),
+        "exact_normalized_source_copy": bool(normal) and normal == source,
+        "embedded_source_copy": len(source) >= 20 and source in normal and source != normal,
+        "missing_shared_numeral": bool(common_numerals - numeral_strings(text)),
         "short_output": len(words) < .5 * len(row["reference"].split()),
         "repeated_trigram": max(Counter(trigrams).values(), default=0) >= 3,
         "unexpected_majority_script": bool(letters) and letters[expected] * 2 < letters.total(),
@@ -99,13 +109,14 @@ def aggregate(root, output):
             aligned = [(base, tuned) for base, tuned in zip(rows["base"], rows["tuned"])
                        if base["direction"] == direction]
             assert aligned
+            assessed = [(base, tuned, diagnostic(base), diagnostic(tuned)) for base, tuned in aligned]
             diagnostics[model][direction] = {
-                stage: dict(sum((Counter({k: int(v) for k, v in diagnostic(pair[index]).items()})
-                                 for pair in aligned), Counter()))
+                stage: {flag: sum(pair[index + 2][flag] for pair in assessed)
+                        for flag in assessed[0][index + 2]}
                 for index, stage in enumerate(("base", "tuned"))
             }
             ranked = []
-            for base, tuned in aligned:
+            for base, tuned, _, _ in assessed:
                 values = [chrf.sentence_score(row["translation"], [row["reference"]]).score
                           for row in (base, tuned)]
                 ranked.append((values[1] - values[0], base, tuned, values))
@@ -118,6 +129,16 @@ def aggregate(root, output):
                     "base": base["translation"], "tuned": tuned["translation"],
                     "sentence_chrf_base": values[0], "sentence_chrf_tuned": values[1], "delta": change,
                 }
+            examples[model][direction]["flag_changes"] = {}
+            for flag in ("exact_normalized_source_copy", "short_output", "repeated_trigram",
+                         "unexpected_majority_script", "missing_shared_numeral"):
+                for base, tuned, before, after in assessed:
+                    if before[flag] and not after[flag]:
+                        examples[model][direction]["flag_changes"][flag] = {
+                            "id": base["id"], "source": base["source"], "reference": base["reference"],
+                            "base": base["translation"], "tuned": tuned["translation"],
+                        }
+                        break
     for axis, (model, title) in zip(axes, MODELS.items()):
         for index, name in enumerate(("bleu", "chrf++")):
             axis.bar([i + (.18 if index else -.18) for i in range(4)],
@@ -273,7 +294,8 @@ def report(output, stats, scores, diagnostics, examples):
     <p>The table counts automatic flags. A short output has fewer than half the reference's
     whitespace tokens. Repetition means the same trigram occurs at least three times. The script
     flag detects when over half the letters fall outside the expected script. Source copying
-    requires full normalized equality. These checks can miss partial copying and are sensitive
+    requires full normalized equality. Other diagnostics track embedded source text and absent
+    numerals present in both source and reference. These checks are sensitive
     to differences in word segmentation.</p>
     {diagnostic_table}
     {''.join(case_html)}
