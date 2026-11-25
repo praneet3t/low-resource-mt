@@ -246,7 +246,104 @@ def training_architectures(output):
     finish(fig, output, "architectures")
 
 
+def bonus_section(output):
+    cpu_path = output / "bonus-evaluation.json"
+    cpu = read(cpu_path) if cpu_path.is_file() else None
+    pilot = []
+    for model in MODELS:
+        for path in sorted((output.parent / "bonus" / model).glob("*.json")):
+            if not path.name.endswith(".translations.json"):
+                pilot.append(read(path))
+    if not cpu and not pilot:
+        return ""
+    write_json(output / "bonus-decoding.json", pilot)
+    with (output / "bonus-decoding.csv").open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle, lineterminator="\n")
+        writer.writerow(("model", "condition", "direction", "examples", "bleu", "chrf++",
+                         "condition_decode_seconds"))
+        for run in pilot:
+            for direction, score in run["scores"].items():
+                writer.writerow((run["model"], run["label"], direction, score["count"], score["bleu"],
+                                 score["chrf++"], run["seconds"]))
+    cpu_html = ""
+    if cpu:
+        cpu_table = table(
+            ("Model", "Direction", "Δ chrF++ [95% interval]", "TER ↓ · base → tuned"),
+            [(MODELS[row["model"]], row["direction"],
+              f"{row['chrf++_delta']:+.2f} [{row['ci95_low']:+.2f}, {row['ci95_high']:+.2f}]",
+              f"{row['ter_base']:.2f} → {row['ter_tuned']:.2f}") for row in cpu["rows"]],
+        )
+        cpu_html = f"""
+        <h3>4.1 Full-holdout uncertainty and edit rate</h3>
+        <p>I resampled matched sentences within each direction {cpu['resamples']:,} times with seed
+        {cpu['seed']} and recomputed corpus chrF++ (<a href="https://aclanthology.org/W04-3250/">Koehn, 2004</a>).
+        The percentile intervals reflect test-sample uncertainty. I also computed case-sensitive translation edit
+        rate (<a href="https://aclanthology.org/2006.amta-papers.25/">Snover et al., 2006</a>).
+        TER can exceed 100 when edit counts exceed reference length.</p>
+        {cpu_table}
+        <p class="small">For Gemma in English → Bodo, chrF++ rose while TER increased sharply.
+        The repetition counts in Section 3 help interpret this disagreement.</p>
+        """
+    pilot_html = ""
+    if pilot:
+        def condition(run):
+            if run["model"] == "madlad":
+                return f"beam {run['beams']}"
+            if run["shots"]:
+                return f"{run['shots']}-shot {run['selection']} selection"
+            return "zero-shot"
+
+        rows = []
+        for run in sorted(pilot, key=lambda r: (r["model"], r["shots"], r["selection"], r["beams"])):
+            label = condition(run)
+            scores = list(run["scores"].values())
+            rows.append((MODELS[run["model"]], label,
+                         *(f"{sum(row[m] for row in scores) / len(scores):.2f}" for m in ("bleu", "chrf++")),
+                         f"{run['seconds']:.1f}"))
+        pilot_table = table(("Model", "Condition", "BLEU ↑", "chrF++ ↑", "Decode time (s)"), rows)
+        def average(run, metric):
+            scores = list(run["scores"].values())
+            return sum(row[metric] for row in scores) / len(scores)
+
+        discussion = []
+        for model in MODELS:
+            subset = [run for run in pilot if run["model"] == model]
+            if not subset:
+                continue
+            baseline = next(run for run in subset if run["label"] in ("beam-1", "none-0"))
+            best = max(subset, key=lambda run: average(run, "chrf++"))
+            discussion.append(f"For {MODELS[model]}, {condition(best)} gave the highest pilot chrF++ "
+                              f"({average(best, 'chrf++'):.2f}, versus {average(baseline, 'chrf++'):.2f} "
+                              f"for {condition(baseline)}).")
+        gemma_runs = {run["label"]: run for run in pilot if run["model"] == "gemma"}
+        if all(f"{method}-{shots}" in gemma_runs for method in ("lexical", "random") for shots in (1, 3, 5)):
+            wins = sum(average(gemma_runs[f"lexical-{shots}"], "chrf++") >
+                       average(gemma_runs[f"random-{shots}"], "chrf++") for shots in (1, 3, 5))
+            discussion.append(f"Lexical selection beat random selection at {wins} of 3 shot counts.")
+        beam_runs = {run["beams"]: run for run in pilot if run["model"] == "madlad"}
+        if 1 in beam_runs and 20 in beam_runs:
+            greedy, wide = beam_runs[1], beam_runs[20]
+            discussion.append(f"Beam 20 changed chrF++ by {average(wide, 'chrf++') - average(greedy, 'chrf++'):+.2f} "
+                              f"points and took {wide['seconds'] / greedy['seconds']:.1f}× the greedy decode time.")
+        pilot_html = f"""
+        <h3>4.2 Few-shot prompting and beam search</h3>
+        <p>I used a fixed sample of 12 labeled holdout examples per direction. On pretrained Gemma,
+        I tested 0, 1, 3, and 5 demonstrations, using seeded random selection and source-token overlap
+        with inverse-frequency weights. Demonstrations came only from same-direction training pairs.
+        On pretrained MADLAD, I varied beam width at a fixed batch size. Both pilots capped generation
+        at 128 tokens. Times are single batched decoding passes and exclude loading and demo selection.</p>
+        {pilot_table}
+        <p>{' '.join(discussion)} The pilot scores are unweighted averages over four directions.
+        The test sample is small, and lexical retrieval can benefit from near-matches in the training corpus. I did not run data augmentation.</p>
+        """
+    return f"""<section class="bonus">
+      <header><h2>4. Additional evaluation</h2></header>
+      {cpu_html}{pilot_html}
+    </section>"""
+
+
 def report(output, stats, scores, diagnostics, examples):
+    extra = bonus_section(output)
     training_architectures(output)
     def score_pair(model, direction, metric):
         base = scores[model]["base"][direction][metric]
@@ -283,25 +380,31 @@ def report(output, stats, scores, diagnostics, examples):
         cases.append(f"<article><h3>{MODELS[model]} · {DIRECTIONS[direction]}</h3>"
                      f"<dl>{fields}</dl></article>")
     madlad_gain = scores["madlad"]["delta"]["en-brx"]["chrf++"]
+    category_means = {}
+    for model in MODELS:
+        for code in LANGUAGES:
+            values = scores[model]["tuned"]
+            category_means[model, code] = (values[f"en-{code}"]["chrf++"] + values[f"{code}-en"]["chrf++"]) / 2
     gemma_bodo = diagnostics["gemma"]["en-brx"]
     gemma_repetitions = gemma_bodo["tuned"].get("repeated_trigram", 0)
     script_base = gemma_bodo["base"]["unexpected_majority_script"]
     script_tuned = gemma_bodo["tuned"]["unexpected_majority_script"]
     html = f"""
     <!doctype html>
-    <html lang="en"><head><meta charset="utf-8"><title>Low-resource machine translation</title>
+    <html lang="en"><head><meta charset="utf-8"><title>Machine Translation with Pretrained Models</title>
     <style>
     @page {{
       size: A4; margin: 15mm 17mm 17mm;
-      @bottom-left {{ content: "Low-resource machine translation"; font: 8pt 'Noto Sans'; color: #52646d; }}
+      @bottom-left {{ content: "Machine Translation with Pretrained Models"; font: 8pt 'Noto Sans'; color: #52646d; }}
       @bottom-right {{ content: counter(page) " / " counter(pages); font: 8pt 'Noto Sans'; color: #52646d; }}
     }}
     * {{ box-sizing: border-box; }}
     body {{ margin: 0; font: 9.3pt/1.37 'Noto Serif', 'Noto Sans Devanagari', serif; color: #191919; }}
     section + section {{ break-before: page; }}
     header {{ margin-bottom: 9pt; }}
+    .title {{ text-align: center; border-top: 1.6pt solid #151515; padding-top: 10pt; border-bottom: .8pt solid #151515; padding-bottom: 8pt; }}
     h1,h2,h3,p,figure,dl {{ margin: 0; }}
-    h1 {{ font: bold 25pt/1.12 'Noto Serif', serif; letter-spacing: -.7pt; max-width: 160mm; }}
+    h1 {{ font: bold 22pt/1.12 'Noto Serif', serif; letter-spacing: -.5pt; }}
     h2 {{ font: bold 17pt/1.16 'Noto Serif', serif; letter-spacing: -.35pt; }}
     h3 {{ font-size: 10pt; line-height: 1.25; margin-bottom: 4pt; }}
     header p {{ margin-top: 6pt; }}
@@ -316,6 +419,7 @@ def report(output, stats, scores, diagnostics, examples):
     th,td {{ text-align: left; padding: 4pt 5pt; border-bottom: .5pt solid #cfdbde; }}
     th {{ border-top: .8pt solid #222; border-bottom: .7pt solid #222; font-weight: bold; }}
     tr:last-child td {{ border-bottom: .8pt solid #222; }}
+    .bonus table td, .bonus table th {{ padding-top: 2.6pt; padding-bottom: 2.6pt; }}
     figure {{ margin: 7pt 0 9pt; break-inside: avoid; }}
     .lengths img {{ width: 85%; }}
     figure img {{ display: block; width: 100%; margin: 0 auto; }}
@@ -331,8 +435,9 @@ def report(output, stats, scores, diagnostics, examples):
     a {{ color: #145e66; }}
     </style></head><body>
     <section>
-      <header><h1>Low-resource machine translation</h1>
+      <header class="title"><h1>Machine Translation with Pretrained Models</h1>
       <p class="lead">English ↔ Khasi and English ↔ Bodo · WMT26 Indic MT</p></header>
+      <h2>1. Data and methods</h2>
       <p>I compared two pretrained models before and after one epoch of supervised fine-tuning.
       I used the same <strong>70,608 directed training examples</strong> for MADLAD-400 3B and
       Gemma 3 1B, then evaluated both versions on matching holdouts.</p>
@@ -345,13 +450,13 @@ def report(output, stats, scores, diagnostics, examples):
       to both models and updated their attention Q/V adapters. In MADLAD, LoRA also applies to encoder attention
       and decoder cross-attention.</figcaption></figure>
       <div class="grid method">
-        <div><h3>Prepare the data</h3>
+        <div><h3>1.1 Data and exploratory analysis</h3>
         <p>I inspected eight pairs per language. Khasi samples were mostly biblical. Bodo samples covered
         history, daily life, and news. The Bodo corpus contained {stats['brx']['normalized_pair_duplicates']:,}
         normalized duplicate pairs and {stats['brx']['excel_escape_rows']} rows with spreadsheet escape patterns.</p>
         <p>I screened for normalized duplicates and official-source overlap before creating fixed validation
         and test splits. The four official lists supplied 4,000 source sentences without references.</p></div>
-        <div><h3>Check, train, and evaluate</h3>
+        <div><h3>1.2 Experimental setup</h3>
         <p>I tested NF4 loading, optimizer updates, adapter reloads, and checkpoint recovery, then used
         A40 benchmarks to choose the batch sizes.</p>
         <p>I trained with BF16 NF4 QLoRA, rank 16, alpha 32, AdamW, learning rate 2 × 10⁻⁴, and seed 42.
@@ -362,7 +467,7 @@ def report(output, stats, scores, diagnostics, examples):
       </div>
     </section>
     <section>
-      <header><h2>Results</h2>
+      <header><h2>2. Results</h2>
       <p class="lead">Corpus BLEU and chrF++ on 3,274 labeled test examples</p></header>
       {score_table}
       <p class="small">Each cell shows zero-shot → fine-tuned. I used SacreBLEU with 13a tokenization
@@ -374,12 +479,19 @@ def report(output, stats, scores, diagnostics, examples):
       <figcaption><strong>Figure 3.</strong> Each bar shows the point change from the matching zero-shot baseline.</figcaption></figure>
       <figure class="result-figure"><img src="training.svg" alt="Training and validation loss for MADLAD and Gemma">
       <figcaption><strong>Figure 4.</strong> Validation loss fell across the four evaluated checkpoints for each model.</figcaption></figure>
-      <p class="small">Both tuned models averaged higher chrF++ into English. Both also averaged higher
-      chrF++ on Khasi directions. Corpus size, domain, script, tokenization, model size, and pretraining
-      differ across these comparisons. The study used one seed.</p>
+      <div class="grid method">
+        <div><h3>2.1 Model comparison</h3><p>Tuned MADLAD led tuned Gemma on BLEU and chrF++ in all four
+        directions. The comparison combines differences in architectures, model sizes, pretraining,
+        tokenization, and input formatting.</p></div>
+        <div><h3>2.2 Resource categories</h3><p>Tuned Khasi/Bodo mean chrF++ was
+        {category_means['madlad','kha']:.2f}/{category_means['madlad','brx']:.2f} for MADLAD and
+        {category_means['gemma','kha']:.2f}/{category_means['gemma','brx']:.2f} for Gemma. Khasi had
+        about twice as many training pairs. Language, script, and domain also vary, so the setup
+        cannot isolate an effect of data volume. I used one training seed.</p></div>
+      </div>
     </section>
     <section>
-      <header><h2>Error analysis and limitations</h2>
+      <header><h2>3. Error analysis and limitations</h2>
       <p class="lead">Automatic checks and examples from the labeled holdouts</p></header>
       {diagnostic_table}
       <p class="small">Counts show zero-shot → fine-tuned. A copy matches the normalized source.
@@ -394,16 +506,18 @@ def report(output, stats, scores, diagnostics, examples):
       <p class="analysis">I found other meaning errors when comparing outputs with English references.
       MADLAD turned a song into a taxi company. Gemma changed a question about Bitcoin crossing a
       threshold into a question about whether it had already reached it. I did not conduct a bilingual adequacy review.</p>
-      <footer class="small"><strong>Sources</strong> · <a href="https://aclanthology.org/2026.wmt-main.53/">WMT26 Indic MT findings</a>.
+
+    </section>
+    {extra}
+      <footer class="small"><strong>References</strong> · <a href="https://aclanthology.org/2026.wmt-main.53/">WMT26 Indic MT findings</a>.
       Kudugunta et al., MADLAD-400 (2023). Google, Gemma 3 Technical Report (2025).
       Dettmers et al., QLoRA (2023). Post, BLEU reporting (2018). Popović, chrF++ (2017).</footer>
-    </section>
     </body></html>
     """
     path = output / "report.pdf"
     HTML(string=html, base_url=str(output.resolve())).write_pdf(path)
     with pymupdf.open(path) as pdf:
-        if len(pdf) != 3:
+        if len(pdf) != (4 if extra else 3):
             raise ValueError(f"Report has {len(pdf)} pages")
         text = "".join(page.get_text() for page in pdf)
         assert any("DEVANAGARI" in ud.name(char, "") for char in text)
@@ -432,8 +546,11 @@ def archive_results(root, archive):
         for name in ("eda.json", "inspection.json"):
             bundle.add(root / "data" / name, arcname=f"data-audit/{name}")
         for name in ("README.md", "requirements.txt", "prepare.py", "study.py", "results.py",
-                     "model_loading.py", "fine_tuning.py", "evaluation.py", "checks.py"):
+                     "model_loading.py", "fine_tuning.py", "evaluation.py", "checks.py",
+                     "bonus_evaluation.py", "bonus_decoding.py"):
             bundle.add(Path(__file__).with_name(name), arcname=f"reproduction/{name}")
+        if (root / "bonus").is_dir():
+            bundle.add(root / "bonus", arcname="bonus")
         for path in sorted(root.glob("*.log")):
             if "qwen" not in path.name:
                 bundle.add(path, arcname=f"logs/{path.name}")
