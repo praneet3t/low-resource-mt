@@ -208,54 +208,57 @@ def visible_text(text):
 def training_architectures(output):
     from matplotlib.patches import Rectangle
 
-    fig, ax = plt.subplots(figsize=(8, 1.95))
+    fig, ax = plt.subplots(figsize=(7.4, 2.2))
     fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
-    ax.set(xlim=(0, 800), ylim=(0, 195))
+    ax.set(xlim=(0, 740), ylim=(0, 220))
     ax.axis("off")
 
-    def box(x, y, width, label, trainable=False):
-        ax.add_patch(Rectangle((x, y), width, 38,
-                               facecolor="#e7edf4" if trainable else "#f7f7f7",
-                               edgecolor="#404b58", linewidth=.7))
-        ax.text(x + width / 2, y + 19, label, ha="center", va="center",
-                fontsize=8, linespacing=1.2, color="#17212b")
+    def node(x, y, width, text):
+        ax.add_patch(Rectangle((x, y - 15), width, 30, fill=False, linewidth=.65))
+        ax.text(x + width / 2, y, text, va="center", ha="center", fontsize=8)
 
-    def arrow(x, y, end):
-        ax.annotate("", (end, y), (x, y),
-                    arrowprops={"arrowstyle": "->", "linewidth": .8, "color": "#404b58"})
+    def arrow(x, y, end_x, end_y, style="-"):
+        ax.annotate("", (end_x, end_y), (x, y),
+                    arrowprops={"arrowstyle": "->", "linewidth": .7, "shrinkA": 0, "shrinkB": 0, "linestyle": style})
 
-    ax.text(4, 181, "(a) MADLAD-400 3B · encoder–decoder", fontsize=9, weight="bold")
-    box(4, 132, 141, "Target tag + source")
-    arrow(145, 151, 161)
-    box(161, 132, 126, "Frozen NF4 T5 encoder\n+ Q/V LoRA", True)
-    arrow(287, 151, 303)
-    box(303, 132, 290, "Frozen NF4 T5 decoder + rank-16 Q/V LoRA\nEncoder states and shifted target tokens", True)
-    arrow(593, 151, 610)
-    box(610, 132, 186, "Cross-entropy\nover target tokens")
+    ax.text(4, 204, "(a) MADLAD-400 3B", weight="bold", fontsize=9)
+    ax.text(4, 166, "Target tag +\nsource tokens", va="center", fontsize=8)
+    arrow(86, 166, 108, 166)
+    node(108, 166, 120, "Encoder\nSelf-attn. + LoRA")
+    arrow(228, 166, 294, 166)
+    ax.text(260, 173, "states", ha="center", fontsize=7)
+    node(294, 166, 183, "Decoder + LoRA\nSelf- and cross-attn.")
+    ax.text(385, 119, "Shifted target tokens", ha="center", fontsize=8)
+    arrow(385, 129, 385, 151)
+    arrow(477, 166, 503, 166)
+    ax.text(508, 166, "Target logits", va="center", fontsize=8)
+    arrow(583, 166, 602, 166)
+    ax.text(608, 166, "CE against\ntarget tokens", va="center", fontsize=8)
+    arrow(540, 156, 540, 128, "--")
+    ax.text(551, 125, "Generated target tokens", va="center", fontsize=8)
 
-    ax.text(4, 110, "(b) Gemma 3 1B · decoder-only", fontsize=9, weight="bold")
-    box(4, 61, 199, "Chat-formatted prompt + target")
-    arrow(203, 80, 219)
-    box(219, 61, 374, "Frozen NF4 causal decoder + rank-16 Q/V LoRA\nCausal attention over the combined sequence", True)
-    arrow(593, 80, 610)
-    box(610, 61, 186, "Target-only cross-entropy\nPrompt labels masked")
-
-    ax.text(4, 31, "For both models, Q/V LoRA weights are trainable in the attention layers.", fontsize=8)
-    ax.text(4, 11, "One epoch  →  lowest validation loss  →  greedy decoding  →  BLEU and chrF++",
-            fontsize=8, color="#17212b")
+    ax.text(4, 93, "(b) Gemma 3 1B", weight="bold", fontsize=9)
+    ax.text(4, 55, "Chat instruction + source\n+ targets (training)", va="center", fontsize=8)
+    arrow(176, 55, 208, 55)
+    node(208, 55, 183, "Causal decoder\nself-attention + LoRA")
+    arrow(391, 55, 424, 55)
+    ax.text(429, 55, "Next-token logits", va="center", fontsize=8)
+    arrow(535, 55, 555, 55)
+    ax.text(561, 55, "CE on target positions\nPrompt labels ignored", va="center", fontsize=8)
+    arrow(474, 46, 474, 22, "--")
+    ax.text(486, 18, "Generated target tokens", va="center", fontsize=8)
+    ax.text(4, 12, "Frozen base weights. Dashed arrows denote inference.", fontsize=8)
     finish(fig, output, "architectures")
 
 
-def bonus_section(output):
-    cpu_path = output / "bonus-evaluation.json"
-    cpu = read(cpu_path) if cpu_path.is_file() else None
+def export_decoding_results(output):
     pilot = []
     for model in MODELS:
         for path in sorted((output.parent / "bonus" / model).glob("*.json")):
             if not path.name.endswith(".translations.json"):
                 pilot.append(read(path))
-    if not cpu and not pilot:
-        return ""
+    if not pilot:
+        return
     write_json(output / "bonus-decoding.json", pilot)
     with (output / "bonus-decoding.csv").open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, lineterminator="\n")
@@ -265,265 +268,269 @@ def bonus_section(output):
             for direction, score in run["scores"].items():
                 writer.writerow((run["model"], run["label"], direction, score["count"], score["bleu"],
                                  score["chrf++"], run["seconds"]))
-    cpu_html = ""
-    if cpu:
-        cpu_table = table(
-            ("Model", "Direction", "Δ chrF++ [95% interval]", "TER ↓ · base → tuned"),
-            [(MODELS[row["model"]], row["direction"],
-              f"{row['chrf++_delta']:+.2f} [{row['ci95_low']:+.2f}, {row['ci95_high']:+.2f}]",
-              f"{row['ter_base']:.2f} → {row['ter_tuned']:.2f}") for row in cpu["rows"]],
-        )
-        cpu_html = f"""
-        <h3>4.1 Full-holdout uncertainty and edit rate</h3>
-        <p>I resampled matched sentences within each direction {cpu['resamples']:,} times with seed
-        {cpu['seed']} and recomputed corpus chrF++ (<a href="https://aclanthology.org/W04-3250/">Koehn, 2004</a>).
-        The percentile intervals reflect test-sample uncertainty. I also computed case-sensitive translation edit
-        rate (<a href="https://aclanthology.org/2006.amta-papers.25/">Snover et al., 2006</a>).
-        TER can exceed 100 when edit counts exceed reference length.</p>
-        {cpu_table}
-        <p class="small">For Gemma in English → Bodo, chrF++ rose while TER increased sharply.
-        The repetition counts in Section 3 help interpret this disagreement.</p>
-        """
-    pilot_html = ""
-    if pilot:
-        def condition(run):
-            if run["model"] == "madlad":
-                return f"beam {run['beams']}"
-            if run["shots"]:
-                return f"{run['shots']}-shot {run['selection']} selection"
-            return "zero-shot"
-
-        rows = []
-        for run in sorted(pilot, key=lambda r: (r["model"], r["shots"], r["selection"], r["beams"])):
-            label = condition(run)
-            scores = list(run["scores"].values())
-            rows.append((MODELS[run["model"]], label,
-                         *(f"{sum(row[m] for row in scores) / len(scores):.2f}" for m in ("bleu", "chrf++")),
-                         f"{run['seconds']:.1f}"))
-        pilot_table = table(("Model", "Condition", "BLEU ↑", "chrF++ ↑", "Decode time (s)"), rows)
-        def average(run, metric):
-            scores = list(run["scores"].values())
-            return sum(row[metric] for row in scores) / len(scores)
-
-        discussion = []
-        for model in MODELS:
-            subset = [run for run in pilot if run["model"] == model]
-            if not subset:
-                continue
-            baseline = next(run for run in subset if run["label"] in ("beam-1", "none-0"))
-            best = max(subset, key=lambda run: average(run, "chrf++"))
-            discussion.append(f"For {MODELS[model]}, {condition(best)} gave the highest pilot chrF++ "
-                              f"({average(best, 'chrf++'):.2f}, versus {average(baseline, 'chrf++'):.2f} "
-                              f"for {condition(baseline)}).")
-        gemma_runs = {run["label"]: run for run in pilot if run["model"] == "gemma"}
-        if all(f"{method}-{shots}" in gemma_runs for method in ("lexical", "random") for shots in (1, 3, 5)):
-            wins = sum(average(gemma_runs[f"lexical-{shots}"], "chrf++") >
-                       average(gemma_runs[f"random-{shots}"], "chrf++") for shots in (1, 3, 5))
-            discussion.append(f"Lexical selection beat random selection at {wins} of 3 shot counts.")
-        beam_runs = {run["beams"]: run for run in pilot if run["model"] == "madlad"}
-        if 1 in beam_runs and 20 in beam_runs:
-            greedy, wide = beam_runs[1], beam_runs[20]
-            discussion.append(f"Beam 20 changed chrF++ by {average(wide, 'chrf++') - average(greedy, 'chrf++'):+.2f} "
-                              f"points and took {wide['seconds'] / greedy['seconds']:.1f}× the greedy decode time.")
-        pilot_html = f"""
-        <h3>4.2 Few-shot prompting and beam search</h3>
-        <p>I used a fixed sample of 12 labeled holdout examples per direction. On pretrained Gemma,
-        I tested 0, 1, 3, and 5 demonstrations, using seeded random selection and source-token overlap
-        with inverse-frequency weights. Demonstrations came only from same-direction training pairs.
-        On pretrained MADLAD, I varied beam width at a fixed batch size. Both pilots capped generation
-        at 128 tokens. Times are single batched decoding passes and exclude loading and demo selection.</p>
-        {pilot_table}
-        <p>{' '.join(discussion)} The pilot scores are unweighted averages over four directions.
-        The test sample is small, and lexical retrieval can benefit from near-matches in the training corpus. I did not run data augmentation.</p>
-        """
-    return f"""<section class="bonus">
-      <header><h2>4. Additional evaluation</h2></header>
-      {cpu_html}{pilot_html}
-    </section>"""
 
 
 def report(output, stats, scores, diagnostics, examples):
-    extra = bonus_section(output)
-    training_architectures(output)
-    def score_pair(model, direction, metric):
-        base = scores[model]["base"][direction][metric]
-        tuned = scores[model]["tuned"][direction][metric]
-        return f"{base:.2f} → {tuned:.2f}"
+    export_decoding_results(output)
+    with plt.rc_context({"font.family": "serif", "svg.fonttype": "path", "pdf.fonttype": 42}):
+        training_architectures(output)
 
-    data_table = table(
-        ("Corpus", "Raw pairs", "Train", "Validation", "Test"),
-        [(f"{name} · Category {index}", f"{stats[code]['usable_rows']:,}",
-          *(f"{stats[code][split + '_pairs']:,}" for split in ("train", "validation", "test")))
-         for index, (code, name) in enumerate(LANGUAGES.items(), 1)],
+    def render_table(headers, rows, caption):
+        return f'<figure class="tabular"><figcaption>{caption}</figcaption>{table(headers, rows)}</figure>'
+
+    corpus = render_table(
+        ("Language", "Category", "Raw", "Train", "Dev", "Test", "EN / target median"),
+        [(name, i, *(f"{stats[code][key]:,}" for key in ("usable_rows", "train_pairs",
+                                                       "validation_pairs", "test_pairs")),
+          f"{stats[code]['english_whitespace_tokens']['median']:.0f} / "
+          f"{stats[code]['target_whitespace_tokens']['median']:.0f}")
+         for i, (code, name) in enumerate(LANGUAGES.items(), 1)],
+        "<b>Table 1:</b> Parallel pair counts and median whitespace-token lengths in the raw corpora.",
     )
-    score_table = table(
-        ("Direction", "MADLAD BLEU", "MADLAD chrF++", "Gemma BLEU", "Gemma chrF++"),
-        [(label, *(score_pair(model, direction, metric) for model in MODELS
-                   for metric in ("bleu", "chrf++"))) for direction, label in DIRECTIONS.items()],
+    main_rows = []
+    for model, label in MODELS.items():
+        for direction, name in DIRECTIONS.items():
+            values = scores[model]
+            main_rows.append((label, name, *
+                              [f"{values[stage][direction][metric]:{'+.2f' if stage == 'delta' else '.2f'}}"
+                               for metric in ("bleu", "chrf++") for stage in ("base", "tuned", "delta")]))
+    headings = ('<thead><tr><th rowspan="2">Model</th><th rowspan="2">Direction</th>'
+                '<th colspan="3">BLEU</th><th colspan="3">chrF++</th></tr>'
+                '<tr><th>Base</th><th>Tuned</th><th>Δ</th><th>Base</th><th>Tuned</th><th>Δ</th></tr></thead>')
+    comparison = table((), main_rows).replace("<thead><tr></tr></thead>", headings)
+    cpu_file = output / "bonus-evaluation.json"
+    pilot_file = output / "bonus-decoding.json"
+    cpu = read(cpu_file) if cpu_file.exists() else {"rows": []}
+    pilot = read(pilot_file) if pilot_file.exists() else []
+    intervals = render_table(
+        ("Model", "Direction", "Δ chrF++ [95% CI]", "TER base", "TER tuned"),
+        [(MODELS[row["model"]], row["direction"],
+          f"{row['chrf++_delta']:+.2f} [{row['ci95_low']:+.2f}, {row['ci95_high']:+.2f}]",
+          f"{row['ter_base']:.2f}", f"{row['ter_tuned']:.2f}") for row in cpu["rows"]],
+        "<b>Table 3:</b> Paired percentile intervals and case-sensitive TER on the full holdout.",
     )
-    flags = ("exact_normalized_source_copy", "short_output",
-             "repeated_trigram", "unexpected_majority_script")
-    diagnostic_table = table(
-        ("Model and direction", "Copies", "Short", "Repeated", "Script"),
-        [(f"{name} · {direction}", *(f"{group['base'].get(flag, 0)} → {group['tuned'].get(flag, 0)}"
-                                    for flag in flags))
-         for model, name in (("madlad", "MADLAD"), ("gemma", "Gemma"))
-         for direction, group in diagnostics[model].items()],
+    pilot_table = render_table(
+        ("Model / condition", "BLEU", "chrF++", "Time (s)"),
+        [((f"MADLAD, beam {row['beams']}" if row["model"] == "madlad" else
+           f"Gemma, {row['shots']}-shot {row['selection']}" if row["shots"] else "Gemma, zero-shot"),
+          *(f"{sum(x[metric] for x in row['scores'].values()) / len(row['scores']):.2f}"
+            for metric in ("bleu", "chrf++")), f"{row['seconds']:.1f}")
+         for row in sorted(pilot, key=lambda x: (x["model"], x["beams"], x["shots"], x["selection"]))],
+        "<b>Table 4:</b> Decoding pilots on 48 matched examples. Scores are means of the four directional "
+        "corpus scores. Time is for one pass and excludes loading and retrieval.",
     )
-    cases = []
+    case_blocks = []
     for model, direction in REVIEW_CASES:
-        options = examples[model][direction]
-        case = options.get("reviewed", options["median"])
-        fields = "".join(f"<dt>{label}</dt><dd>{escape(visible_text(case[key]))}</dd>"
-                         for label, key in (("Source", "source"), ("Reference", "reference"),
-                                            ("Zero-shot", "base"), ("Fine-tuned", "tuned")))
-        cases.append(f"<article><h3>{MODELS[model]} · {DIRECTIONS[direction]}</h3>"
-                     f"<dl>{fields}</dl></article>")
-    madlad_gain = scores["madlad"]["delta"]["en-brx"]["chrf++"]
-    category_means = {}
-    for model in MODELS:
-        for code in LANGUAGES:
-            values = scores[model]["tuned"]
-            category_means[model, code] = (values[f"en-{code}"]["chrf++"] + values[f"{code}-en"]["chrf++"]) / 2
-    gemma_bodo = diagnostics["gemma"]["en-brx"]
-    gemma_repetitions = gemma_bodo["tuned"].get("repeated_trigram", 0)
-    script_base = gemma_bodo["base"]["unexpected_majority_script"]
-    script_tuned = gemma_bodo["tuned"]["unexpected_majority_script"]
+        group = examples[model][direction]
+        case = group.get("reviewed", group["median"])
+        entries = "".join(f'<dt>{label}</dt><dd>{escape(visible_text(case[key]))}</dd>'
+                          for label, key in (("Source", "source"), ("Reference", "reference"),
+                                             ("Base", "base"), ("Tuned", "tuned")))
+        case_blocks.append(f'<div><h3>{MODELS[model]} · {DIRECTIONS[direction]}</h3>'
+                           f'<dl>{entries}</dl></div>')
+    gemma = diagnostics["gemma"]["en-brx"]
+    madlad = diagnostics["madlad"]["en-brx"]
+    gain = scores["madlad"]["delta"]["en-brx"]["chrf++"]
+    has_supplement = bool(cpu["rows"] and pilot)
+    additional = f"""
+      <h2>5 Additional experiments</h2>
+      <p>On the full holdout, I resampled matched sentences within each direction 2,000 times
+      with seed 42 and recomputed corpus chrF++ (Koehn, 2004). These intervals reflect sentence
+      sampling for the fitted systems. They omit variation across training seeds and are
+      unadjusted for multiple comparisons. TER measures edits per reference word and can
+      exceed 100 (Snover et al., 2006).</p>
+      {intervals}
+      <p>In separate pilots with 12 test sentences per direction, I used pretrained Gemma
+      with zero, one, three, or five demonstrations drawn from same-direction training pairs.
+      Selection used seeded random sampling or inverse-frequency-weighted source-token overlap.
+      With pretrained MADLAD, I varied beam width at a fixed batch size. Both pilots capped
+      generation at 128 new tokens.</p>
+      {pilot_table}
+    """ if has_supplement else ""
+    pilot_discussion = f"""
+      <p>Lexical selection outscored random selection at every tested shot count on chrF++.
+      The best BLEU and chrF++ occurred at different counts. Retrieved near-matches may
+      contribute to these gains. Beam width 20 gave the highest scores among the tested
+      widths but increased decoding time. Widths 5 and 10 reduced chrF++ relative to greedy
+      decoding. These rankings are specific to the small sample. I did not test data augmentation.</p>
+    """ if has_supplement else ""
     html = f"""
-    <!doctype html>
-    <html lang="en"><head><meta charset="utf-8"><title>Machine Translation with Pretrained Models</title>
+    <!doctype html><html lang="en"><head><meta charset="utf-8">
+    <title>Machine Translation with Pretrained Models</title>
     <style>
-    @page {{
-      size: A4; margin: 15mm 17mm 17mm;
-      @bottom-left {{ content: "Machine Translation with Pretrained Models"; font: 8pt 'Noto Sans'; color: #52646d; }}
-      @bottom-right {{ content: counter(page) " / " counter(pages); font: 8pt 'Noto Sans'; color: #52646d; }}
-    }}
-    * {{ box-sizing: border-box; }}
-    body {{ margin: 0; font: 9.3pt/1.37 'Noto Serif', 'Noto Sans Devanagari', serif; color: #191919; }}
-    section + section {{ break-before: page; }}
-    header {{ margin-bottom: 9pt; }}
-    .title {{ text-align: center; border-top: 1.6pt solid #151515; padding-top: 10pt; border-bottom: .8pt solid #151515; padding-bottom: 8pt; }}
-    h1,h2,h3,p,figure,dl {{ margin: 0; }}
-    h1 {{ font: bold 22pt/1.12 'Noto Serif', serif; letter-spacing: -.5pt; }}
-    h2 {{ font: bold 17pt/1.16 'Noto Serif', serif; letter-spacing: -.35pt; }}
-    h3 {{ font-size: 10pt; line-height: 1.25; margin-bottom: 4pt; }}
-    header p {{ margin-top: 6pt; }}
-    .lead {{ color: #405760; font-size: 10pt; }}
-    .grid {{ display: flex; gap: 12pt; }}
-    .grid > * {{ flex: 1; min-width: 0; }}
-    .method > div {{ padding-top: 7pt; border-top: .7pt solid #b9cbce; }}
-    .method p + p {{ margin-top: 5pt; }}
-    aside {{ margin: 6pt 0 8pt; }}
-    aside strong {{ color: #202020; }}
-    table {{ width: 100%; border-collapse: collapse; margin: 7pt 0 9pt; font-size: 8pt; }}
-    th,td {{ text-align: left; padding: 4pt 5pt; border-bottom: .5pt solid #cfdbde; }}
-    th {{ border-top: .8pt solid #222; border-bottom: .7pt solid #222; font-weight: bold; }}
-    tr:last-child td {{ border-bottom: .8pt solid #222; }}
-    .bonus table td, .bonus table th {{ padding-top: 2.6pt; padding-bottom: 2.6pt; }}
-    figure {{ margin: 7pt 0 9pt; break-inside: avoid; }}
-    .lengths img {{ width: 85%; }}
-    figure img {{ display: block; width: 100%; margin: 0 auto; }}
-    .result-figure img {{ width: 84%; }}
-    figcaption,.small {{ color: #405760; font-size: 8.2pt; line-height: 1.42; }}
-    figcaption {{ margin-top: 4pt; }}
-    article {{ border-top: .7pt solid #57626e; padding: 6pt 0; }}
-    dt {{ font-weight: bold; color: #303944; font-size: 7.5pt; }}
-    dd {{ margin: 0 0 4pt; font-size: 8pt; overflow-wrap: anywhere; }}
-    dd:last-child {{ margin-bottom: 0; }}
-    .analysis {{ margin-top: 8pt; }}
-    footer {{ border-top: .7pt solid #b9cbce; padding-top: 5pt; margin-top: 8pt; }}
-    a {{ color: #145e66; }}
+    @page {{ size: A4; margin: 17mm 18mm 17mm; @bottom-center {{
+      content: counter(page); font: 8.5pt 'Noto Serif'; }} }}
+    body {{ margin:0; color:#111; font:9.8pt/1.31 'Noto Serif','Noto Sans Devanagari',serif; }}
+    section + section {{ break-before:page; }}
+    h1 {{ margin:3mm 0 8mm; text-align:center; font-size:19pt; line-height:1.18; }}
+    h2 {{ margin:0 0 5pt; font-size:12pt; line-height:1.25; }}
+    h3 {{ margin:0 0 4pt; font-size:9.4pt; }}
+    p {{ margin:0 0 6pt; widows:2; orphans:2; }}
+    .columns {{ display:flex; gap:6mm; align-items:flex-start; }}
+    .columns > div {{ flex:1; min-width:0; }}
+    figure {{ margin:8pt 0 10pt; break-inside:avoid; }}
+    img {{ display:block; margin:auto; width:94%; }}
+    .architecture img {{ width:100%; }}
+    .length img {{ width:76%; }}
+    .supplement td,.supplement th {{ padding-top:2.2pt; padding-bottom:2.2pt; }}
+    figcaption {{ margin-top:4pt; font-size:8.8pt; line-height:1.34; }}
+    .tabular figcaption {{ margin:0 0 5pt; }}
+    table {{ border-collapse:collapse; width:100%; font-size:8.4pt; line-height:1.3;
+             border-top:.8pt solid #171717; border-bottom:.8pt solid #171717; }}
+    thead {{ border-bottom:.55pt solid #171717; }}
+    th,td {{ text-align:right; padding:2.8pt 4pt; white-space:nowrap; }}
+    th:first-child,td:first-child,th:nth-child(2),td:nth-child(2) {{ text-align:left; }}
+    .primary tbody tr:nth-child(5) {{ border-top:.5pt solid #333; }}
+    .primary th[colspan] {{ text-align:center; }}
+    .example {{ margin:10pt 0; }}
+    dl {{ margin:0; font-size:9pt; line-height:1.35; }}
+    dt {{ font-weight:bold; }}
+    dd {{ margin:0 0 4pt; overflow-wrap:anywhere; }}
+    .refs {{ font-size:8.6pt; line-height:1.4; }}
+    a {{ color:#111; }}
     </style></head><body>
     <section>
-      <header class="title"><h1>Machine Translation with Pretrained Models</h1>
-      <p class="lead">English ↔ Khasi and English ↔ Bodo · WMT26 Indic MT</p></header>
-      <h2>1. Data and methods</h2>
-      <p>I compared two pretrained models before and after one epoch of supervised fine-tuning.
-      I used the same <strong>70,608 directed training examples</strong> for MADLAD-400 3B and
-      Gemma 3 1B, then evaluated both versions on matching holdouts.</p>
-      {data_table}
-      <figure class="lengths"><img src="lengths.svg" alt="Two cumulative sentence-length charts for Khasi and Bodo">
-      <figcaption><strong>Figure 1.</strong> Cumulative distributions of whitespace-token lengths.
-      The horizontal axis shows up to 100 tokens.</figcaption></figure>
-      <figure><img src="architectures.svg" alt="MADLAD encoder–decoder and Gemma decoder-only QLoRA training paths">
-      <figcaption><strong>Figure 2.</strong> Fine-tuning architectures. I supplied the same parallel examples
-      to both models and updated their attention Q/V adapters. In MADLAD, LoRA also applies to encoder attention
-      and decoder cross-attention.</figcaption></figure>
-      <div class="grid method">
-        <div><h3>1.1 Data and exploratory analysis</h3>
-        <p>I inspected eight pairs per language. Khasi samples were mostly biblical. Bodo samples covered
-        history, daily life, and news. The Bodo corpus contained {stats['brx']['normalized_pair_duplicates']:,}
-        normalized duplicate pairs and {stats['brx']['excel_escape_rows']} rows with spreadsheet escape patterns.</p>
-        <p>I screened for normalized duplicates and official-source overlap before creating fixed validation
-        and test splits. The four official lists supplied 4,000 source sentences without references.</p></div>
-        <div><h3>1.2 Experimental setup</h3>
-        <p>I tested NF4 loading, optimizer updates, adapter reloads, and checkpoint recovery, then used
-        A40 benchmarks to choose the batch sizes.</p>
-        <p>I trained with BF16 NF4 QLoRA, rank 16, alpha 32, AdamW, learning rate 2 × 10⁻⁴, and seed 42.
-        I used MADLAD target tags (&lt;2en&gt;, &lt;2kha&gt;, &lt;2brx&gt;) and Gemma’s chat template,
-        masking Gemma’s prompt labels.
-        I used an effective batch of 64, evaluated at each quarter epoch, and selected the checkpoint with
-        lowest validation loss. For both baselines and tuned models, I used BF16 greedy decoding with up to 256 new tokens.</p></div>
-      </div>
+      <h1>Machine Translation with Pretrained Models</h1>
+      <div class="columns"><div>
+      <h2>1 Introduction</h2>
+      <p>I study how one epoch of supervised adaptation changes translation between English
+      and two low-resource languages, Khasi and Bodo. I compare a pretrained translation model
+      with an instruction-tuned causal model, using the same directed examples and evaluating
+      each checkpoint before and after adaptation. The comparison asks which directions
+      improve and whether gains in reference overlap coincide with fewer observable errors.</p>
+      <h2>2 Dataset and exploratory analysis</h2>
+      <p>I used the WMT26 Indic MT workbooks (Pakray et al., 2026), with Khasi in Category 1
+      and Bodo in Category 2. I inspected eight evenly spaced parallel pairs per language.
+      The Khasi examples include biblical passages and archaic English. The Bodo examples span
+      history, everyday descriptions, and news. Khasi uses Latin script, whereas the Bodo
+      targets are predominantly Devanagari.</p>
+      </div><div>
+      <p>Khasi reference sentences are generally longer than their English counterparts
+      (Table 1, Figure 1). I found extreme Khasi length ratios, including examples where a
+      verse appeared paired with a heading or a longer passage. In Bodo, 2,451 rows repeated
+      an earlier normalized pair, and 35 rows contained spreadsheet escape patterns.
+      The larger Khasi corpus may help adaptation, although its domain concentration can
+      limit transfer to other material.</p>
+      <p>I screened for repeated normalized sides and overlap with official sources before
+      forming fixed development and test splits. I held out both directions of each selected
+      pair together. The four official test lists supplied 4,000 sources without references.
+      I generated official predictions separately for each system. All reported scores use
+      the labeled holdouts.</p>
+      </div></div>
+      {corpus}
+      <figure class="length"><img src="lengths.svg"><figcaption><b>Figure 1:</b> Empirical cumulative distributions
+      of English and target lengths in whitespace tokens. The horizontal axis ends at 100.</figcaption></figure>
+      <h2>3 Models and methodology</h2>
+      <div class="columns"><div>
+      <p>MADLAD-400 3B is a T5 encoder–decoder trained for multilingual translation
+      (Kudugunta et al., 2023). I prepended <code>&lt;2en&gt;</code>, <code>&lt;2kha&gt;</code>,
+      or <code>&lt;2brx&gt;</code>. Gemma 3 1B is a causal decoder. I used its chat template with
+      a translation-only instruction and masked prompt positions in training.</p>
+      </div><div>
+      <p>I first tested loading, optimization, adapter reloads and checkpoint recovery, then
+      selected microbatches of 32 for MADLAD and 16 for Gemma using A40 measurements.
+      Both used an effective batch of 64, AdamW at an initial learning rate of 2 × 10⁻⁴,
+      and seed 42. I used BF16 with frozen base weights, double-quantized NF4 linear layers, and rank-16, α=32
+      LoRA adapters on attention query and value projections (Dettmers et al., 2023).</p>
+      </div></div>
     </section>
     <section>
-      <header><h2>2. Results</h2>
-      <p class="lead">Corpus BLEU and chrF++ on 3,274 labeled test examples</p></header>
-      {score_table}
-      <p class="small">Each cell shows zero-shot → fine-tuned. I used SacreBLEU with 13a tokenization
-      and chrF++ with word bigrams. I generated official predictions separately for all four systems.</p>
-      <aside><strong>MADLAD improved on both metrics in all four directions.</strong>
-      Its largest chrF++ gain was {madlad_gain:+.2f} for English → Bodo. Gemma’s results were mixed,
-      including a drop in Khasi → English chrF++ and English → Bodo BLEU.</aside>
-      <figure class="result-figure"><img src="improvements.svg" alt="Changes in BLEU and chrF++ by model and direction">
-      <figcaption><strong>Figure 3.</strong> Each bar shows the point change from the matching zero-shot baseline.</figcaption></figure>
-      <figure class="result-figure"><img src="training.svg" alt="Training and validation loss for MADLAD and Gemma">
-      <figcaption><strong>Figure 4.</strong> Validation loss fell across the four evaluated checkpoints for each model.</figcaption></figure>
-      <div class="grid method">
-        <div><h3>2.1 Model comparison</h3><p>Tuned MADLAD led tuned Gemma on BLEU and chrF++ in all four
-        directions. The comparison combines differences in architectures, model sizes, pretraining,
-        tokenization, and input formatting.</p></div>
-        <div><h3>2.2 Resource categories</h3><p>Tuned Khasi/Bodo mean chrF++ was
-        {category_means['madlad','kha']:.2f}/{category_means['madlad','brx']:.2f} for MADLAD and
-        {category_means['gemma','kha']:.2f}/{category_means['gemma','brx']:.2f} for Gemma. Khasi had
-        about twice as many training pairs. Language, script, and domain also vary, so the setup
-        cannot isolate an effect of data volume. I used one training seed.</p></div>
-      </div>
+      <figure class="architecture"><img src="architectures.svg"><figcaption><b>Figure 2:</b> Token flow
+      during adaptation. CE denotes cross-entropy. MADLAD applies LoRA in encoder self-attention,
+      decoder self-attention and decoder cross-attention. Gemma applies LoRA in causal self-attention.
+      The target labels include EOS for MADLAD and the end-of-turn token for Gemma.</figcaption></figure>
+      <div class="columns"><div><p>I trained each model for one epoch with a 256-token cap on each
+      source and target segment. I selected checkpoints by development loss measured every quarter
+      epoch. The final checkpoint had the lowest loss for both models (Figure 3).</p></div>
+      <div><p>I decoded both pretrained and adapted checkpoints in BF16 with greedy decoding and a
+      cap of 256 new tokens. I scored the same 3,274 examples with SacreBLEU (13a, case-sensitive)
+      and chrF++ with word bigrams.</p></div></div>
+      <figure><img src="training.svg"><figcaption><b>Figure 3:</b> Logged training loss and quarterly
+      development loss. Compare trends within each model because tokenization and objectives differ.</figcaption></figure>
+      <h2>4 Results and discussion</h2>
+      <figure class="tabular primary"><figcaption><b>Table 2:</b> Full-holdout scores. Δ is the fine-tuned
+      score minus the zero-shot score, computed before rounding.</figcaption>{comparison}</figure>
+    </section>
+    <section class="supplement">
+      <div class="columns"><div>
+      <p>MADLAD improved on both metrics in all directions and led tuned Gemma in each
+      comparison (Table 2). Its largest chrF++ gain was {gain:.2f} into Bodo, where exact
+      English copies fell from {madlad['base']['exact_normalized_source_copy']} to
+      {madlad['tuned']['exact_normalized_source_copy']}. Parallel supervision may have helped
+      adapt an existing translation objective and target-tag interface to these corpora.
+      Model size, pretraining, tokenization, and input format vary alongside architecture.</p>
+      <p>Both tuned models averaged higher chrF++ on Category 1 Khasi than on Category 2
+      Bodo. Khasi had roughly twice as many training pairs, but one language represents each
+      category. Differences in script, sentence length, and domain prevent isolation of a
+      resource-level effect.</p>
+      </div><div>
+      <p>Gemma’s gains were smaller and depended on the metric. English→Bodo BLEU and
+      Khasi→English chrF++ fell. The autoregressive objective can reward locally plausible
+      continuations without ensuring that greedy generation maintains source coverage.
+      The observed repetition and omissions are consistent with this account. The
+      experiment cannot establish their cause.</p>
+      </div></div>
+      {additional}
     </section>
     <section>
-      <header><h2>3. Error analysis and limitations</h2>
-      <p class="lead">Automatic checks and examples from the labeled holdouts</p></header>
-      {diagnostic_table}
-      <p class="small">Counts show zero-shot → fine-tuned. A copy matches the normalized source.
-      Short means under half the reference’s whitespace-token count. A repetition flag requires the
-      same trigram at least three times. The script flag checks the majority letter script.</p>
-      <aside>For Gemma in English → Bodo, script flags fell from <strong>{script_base} to {script_tuned}</strong>
-      out of 637 outputs. After fine-tuning, <strong>{gemma_repetitions}</strong> outputs triggered the repetition check.</aside>
-      <div class="grid">{''.join(cases)}</div>
-      <p class="analysis">In the MADLAD example, fine-tuning removed the English copy and produced
-      Devanagari text with recognizable forms of Michael Jordan and basketball. In the Gemma example,
-      fine-tuning recovered Tom and 2:30 but still omitted the homecoming.</p>
-      <p class="analysis">I found other meaning errors when comparing outputs with English references.
-      MADLAD turned a song into a taxi company. Gemma changed a question about Bitcoin crossing a
-      threshold into a question about whether it had already reached it. I did not conduct a bilingual adequacy review.</p>
-
+      {pilot_discussion}
+      <h2>6 Error analysis and limitations</h2>
+      <div class="columns"><div>
+      <p>In English→Bodo, Gemma’s script flags fell from {gemma['base']['unexpected_majority_script']}
+      to {gemma['tuned']['unexpected_majority_script']} of 637 outputs. The flag identifies a mismatch
+      in majority letter script and does not verify linguistic adequacy. In the same direction,
+      repeated-trigram flags rose from {gemma['base']['repeated_trigram']} to
+      {gemma['tuned']['repeated_trigram']}. A trigram triggers the flag when it appears at least
+      three times.</p>
+      </div><div>
+      <p>The chrF++ gain into Bodo is compatible with increased character overlap once outputs
+      use Devanagari. Repeated material can still require many edits, which helps explain why
+      TER worsened sharply{" (Table 3)" if has_supplement else ""}. Neither measure judges whether the generated proposition
+      preserves the meaning of the source.</p>
+      </div></div>
+      <figure class="example"><div class="columns">{''.join(case_blocks)}</div>
+      <figcaption><b>Examples 1–2:</b> Labeled holdout sources, references, and system outputs.</figcaption></figure>
+      <div class="columns"><div>
+      <p>In the first example, MADLAD reproduces the entire English source before tuning.
+      The adapted text uses Devanagari and contains recognizable forms of Michael Jordan
+      and basketball. The Gemma example shows a different failure: the tuned model recovers
+      Tom and 2:30 but omits the action of coming home. In other inspected cases, MADLAD
+      rendered a song as a taxi company. Gemma changed whether a Bitcoin threshold would
+      be crossed into whether it had already been reached.</p>
+      </div><div>
+      <p>I inspected examples and used automatic diagnostics. I did not conduct a bilingual
+      adequacy study. The holdout comes from the available parallel workbooks and has one
+      reference per source. Possible near-duplicates and pretraining overlap were not
+      assessed. Results come from a single training seed, and the source-only official
+      lists cannot support reference-based claims about out-of-domain translation.</p>
+      </div></div>
+      <h2>7 Conclusion</h2>
+      <p>On these holdouts, one epoch of QLoRA consistently improved MADLAD’s reference-based
+      scores. Gemma’s improved script use coexisted with repetition and missing source content.
+      Comparing chrF++ with TER and inspecting outputs was necessary to characterize that result.
+      The decoding pilots show what was possible on a small sample and leave full-test comparisons open.</p>
+      <h2>References</h2>
+      <p class="refs">Pakray et al. (2026). <a href="https://aclanthology.org/2026.wmt-main.53/">WMT26 Indic MT findings</a>.
+      Kudugunta et al. (2023). <a href="https://arxiv.org/abs/2309.04662">MADLAD-400</a>.
+      Gemma Team (2025). Gemma 3 technical report.
+      Dettmers et al. (2023). <a href="https://proceedings.neurips.cc/paper_files/paper/2023/hash/1feb87871436031bdc0f2beaa62a049b-Abstract.html">QLoRA</a>.
+      Post (2018). <a href="https://aclanthology.org/W18-6319/">A call for clarity in reporting BLEU scores</a>.
+      Popović (2017). chrF++.<br>
+      Koehn (2004). <a href="https://aclanthology.org/W04-3250/">Statistical significance tests for machine translation evaluation</a>.
+      Snover et al. (2006). <a href="https://aclanthology.org/2006.amta-papers.25/">A study of translation edit rate with targeted human annotation</a>.</p>
     </section>
-    {extra}
-      <footer class="small"><strong>References</strong> · <a href="https://aclanthology.org/2026.wmt-main.53/">WMT26 Indic MT findings</a>.
-      Kudugunta et al., MADLAD-400 (2023). Google, Gemma 3 Technical Report (2025).
-      Dettmers et al., QLoRA (2023). Post, BLEU reporting (2018). Popović, chrF++ (2017).</footer>
     </body></html>
     """
     path = output / "report.pdf"
     HTML(string=html, base_url=str(output.resolve())).write_pdf(path)
     with pymupdf.open(path) as pdf:
-        if len(pdf) != (4 if extra else 3):
+        if len(pdf) != 4:
             raise ValueError(f"Report has {len(pdf)} pages")
         text = "".join(page.get_text() for page in pdf)
         assert any("DEVANAGARI" in ud.name(char, "") for char in text)
         assert "\ufffd" not in text
         for index, page in enumerate(pdf, 1):
-            page.get_pixmap(dpi=110).save(output / f"report-page-{index}.png")
+            page.get_pixmap(dpi=180).save(output / f"report-page-{index}.png")
 
 
 def archive_results(root, archive):

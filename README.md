@@ -15,6 +15,7 @@ Scores are zero-shot → fine-tuned. See [report](report.pdf), [CSV](results/sco
 
 Use Python 3.12, a CUDA GPU, and Pango with Noto Serif and Noto Sans Devanagari. Accept the Gemma terms and sign in with `hf auth login`.
 The scripts cover [preparation](prepare.py), [EDA and reporting](results.py), [loading and prompts](model_loading.py), [fine-tuning](fine_tuning.py), and [baseline and tuned evaluation](evaluation.py). Run `python results.py --eda-only` after preparation to regenerate corpus figures.
+MADLAD prepends `<2en>`, `<2kha>`, or `<2brx>` to the source. Gemma uses its chat template with the user message `Translate the following text from {source language} to {target language}. Return only the translation.` and the source after a blank line.
 
 ```sh
 python -m pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cu129
@@ -32,7 +33,7 @@ done
 python results.py
 ```
 
-## Bonus evaluation
+## Additional evaluation
 
 The pilot uses 12 fixed test examples per direction, seed 42, and a 128-token decoding cap. See [pilot scores](results/bonus-decoding.csv), [TER and bootstrap intervals](results/bonus-evaluation.csv), and [pilot translations](https://github.com/praneet3t/low-resource-mt/releases/download/study-v1/bonus-translations.tar.gz). The full-holdout TER and bootstrap analysis only reads saved translations. To run it without retraining, unpack the [original archive](https://github.com/praneet3t/low-resource-mt/releases/download/study-v1/low-resource-mt-results.tar.gz) and pass its extracted directory as `--root`.
 
