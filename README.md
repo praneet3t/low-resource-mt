@@ -18,13 +18,17 @@ for model in madlad gemma; do
 done
 ```
 
-Use the benchmark to set the microbatch and gradient accumulation for each model. Enable `--gradient-checkpointing` if required by memory. Run with `--resume` to load the latest Trainer checkpoint or pass an explicit checkpoint path.
+The A40 run uses 64-example effective training batches. Use `--resume` to continue training from the most recent checkpoint, or pass a checkpoint path. Evaluation resumes from its partial output automatically.
 
 ```sh
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 for model in madlad gemma; do
-  python study.py evaluate "$model" --batch 32 --output "runs/base/$model"
-  python study.py train "$model" --batch 16 --accumulation 2 --output "runs/train/$model"
-  python study.py evaluate "$model" --batch 32 --adapter "runs/train/$model/adapter" --output "runs/tuned/$model"
+  python study.py evaluate "$model" --batch 64 --output "runs/base/$model"
+done
+python study.py train madlad --batch 32 --accumulation 2 --gradient-checkpointing --output runs/train/madlad
+python study.py train gemma --batch 16 --accumulation 4 --gradient-checkpointing --output runs/train/gemma
+for model in madlad gemma; do
+  python study.py evaluate "$model" --batch 64 --adapter "runs/train/$model/adapter" --output "runs/tuned/$model"
 done
 python results.py --archive runs/low-resource-mt-results.tar.gz
 ```
