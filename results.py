@@ -4,11 +4,11 @@ from html import escape
 import json
 from pathlib import Path
 import re
+from statistics import mean
 import tarfile
 import unicodedata as ud
 
 import matplotlib
-from statistics import mean
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pymupdf
@@ -145,7 +145,7 @@ def aggregate(root, output):
                      [scores[model]["delta"][d][name] for d in DIRECTIONS],
                      width=.32, color=COLORS[index], label=("BLEU", "chrF++")[index])
         axis.axhline(0, color=".3", linewidth=.7)
-        axis.set(title=title, xticks=range(4), xticklabels=["EN–KH", "KH–EN", "EN–BO", "BO–EN"])
+        axis.set(title=title, xticks=range(4), xticklabels=["en→kha", "kha→en", "en→brx", "brx→en"])
     axes[0].set_ylabel("Change in score (points)")
     axes[1].legend(frameon=False)
     finish(fig, output, "improvements")
@@ -270,8 +270,8 @@ def report(output, stats, scores, diagnostics, examples):
     with archaic English and occasional spacing around punctuation. The sampled Bodo rows include
     history, everyday descriptions, regional culture, headlines and economic text. Khasi had 91
     English-to-Khasi length ratios outside [0.33, 3] and two extreme inspected rows appeared to pair
-    verse text with a heading or larger passage. Bodo had 2,451 normalized duplicate pairs and
-    at least one sampled English row contained an escaped spreadsheet character.
+    verse text with a heading or larger passage. Bodo had {stats['brx']['normalized_pair_duplicates']:,} normalized duplicate pairs.
+    Escaped spreadsheet character patterns occurred in {stats['brx']['excel_escape_rows']} Bodo rows.
     Khasi primarily uses Latin letters and Bodo primarily uses Devanagari. The larger Khasi corpus
     may offer a stronger in-domain learning signal. Its biblical concentration also makes transfer
     to the contemporary official news sources uncertain.</p>
@@ -326,7 +326,8 @@ def archive_results(root, archive):
     archive.parent.mkdir(parents=True, exist_ok=True)
     with tarfile.open(archive, "w:gz") as bundle:
         def retain(info):
-            if ".partial." in info.name or "/report-page-" in info.name:
+            if (".partial." in info.name or "/report-page-" in info.name
+                    or info.name.startswith("train/") and info.name.endswith("/README.md")):
                 return None
             return info
 
