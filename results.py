@@ -5,7 +5,6 @@ from html import escape
 import json
 from pathlib import Path
 import re
-from statistics import mean
 import tarfile
 import unicodedata as ud
 
@@ -207,147 +206,162 @@ def visible_text(text):
 
 
 def report(output, stats, scores, diagnostics, examples):
-    rows = []
-    for model, title in MODELS.items():
-        for direction, label in DIRECTIONS.items():
-            entry = []
-            for metric in ("bleu", "chrf++"):
-                entry.extend(f"{scores[model][stage][direction][metric]:.2f}"
-                             for stage in ("base", "tuned", "delta"))
-            rows.append([title, label] + entry)
-    data_table = table(("Language", "Category", "Raw pairs", "Train", "Validation", "Test"),
-                       [(name, index, stats[code]["usable_rows"], stats[code]["train_pairs"],
-                         stats[code]["validation_pairs"], stats[code]["test_pairs"])
-                        for index, (code, name) in enumerate(LANGUAGES.items(), 1)])
-    score_table = table(("Model", "Direction", "BLEU base", "Tuned", "Δ", "chrF++ base", "Tuned", "Δ"), rows)
-    notes = []
-    for model, title in MODELS.items():
-        ranked = sorted(DIRECTIONS, key=lambda d: scores[model]["delta"][d]["chrf++"])
-        largest, smallest = ranked[-1], ranked[0]
-        notes.append(f"{title}: the largest chrF++ change was {scores[model]['delta'][largest]['chrf++']:+.2f} "
-                     f"for {DIRECTIONS[largest]}. The smallest was "
-                     f"{scores[model]['delta'][smallest]['chrf++']:+.2f} for {DIRECTIONS[smallest]}.")
-    differences = []
-    for model, title in MODELS.items():
-        score = scores[model]["tuned"]
-        language_gap = mean(score[d]["chrf++"] for d in ("en-kha", "kha-en")) - mean(
-            score[d]["chrf++"] for d in ("en-brx", "brx-en"))
-        direction_gap = mean(score[d]["chrf++"] for d in ("kha-en", "brx-en")) - mean(
-            score[d]["chrf++"] for d in ("en-kha", "en-brx"))
-        differences.append(f"{title} had a Khasi-minus-Bodo gap of {language_gap:+.2f} chrF++ "
-                           f"and an into-English-minus-out-of-English gap of {direction_gap:+.2f}.")
-    head_to_head = sum(scores["madlad"]["tuned"][d]["chrf++"] > scores["gemma"]["tuned"][d]["chrf++"]
-                       for d in DIRECTIONS)
-    comparison = f"Tuned MADLAD had higher chrF++ than tuned Gemma in {head_to_head} of 4 directions."
-    diagnostic_rows = []
-    for model, title in MODELS.items():
-        for direction, label in DIRECTIONS.items():
-            vals = diagnostics[model][direction]
-            diagnostic_rows.append([title, label] + [
-                f"{vals['base'].get(key, 0)} → {vals['tuned'].get(key, 0)}"
-                for key in ("exact_normalized_source_copy", "short_output",
-                            "repeated_trigram", "unexpected_majority_script")
-            ])
-    diagnostic_table = table(("Model", "Direction", "Source copy", "Short", "Repetition", "Script"), diagnostic_rows)
-    case_html = []
+    def score_pair(model, direction, metric):
+        base = scores[model]["base"][direction][metric]
+        tuned = scores[model]["tuned"][direction][metric]
+        return f"{base:.2f} → {tuned:.2f}"
+
+    data_table = table(
+        ("Corpus", "Raw pairs", "Train", "Validation", "Test"),
+        [(f"{name} · Category {index}", f"{stats[code]['usable_rows']:,}",
+          *(f"{stats[code][split + '_pairs']:,}" for split in ("train", "validation", "test")))
+         for index, (code, name) in enumerate(LANGUAGES.items(), 1)],
+    )
+    score_table = table(
+        ("Direction", "MADLAD BLEU", "MADLAD chrF++", "Gemma BLEU", "Gemma chrF++"),
+        [(label, *(score_pair(model, direction, metric) for model in MODELS
+                   for metric in ("bleu", "chrf++"))) for direction, label in DIRECTIONS.items()],
+    )
+    flags = ("exact_normalized_source_copy", "short_output",
+             "repeated_trigram", "unexpected_majority_script")
+    diagnostic_table = table(
+        ("Model and direction", "Copies", "Short", "Repeated", "Script"),
+        [(f"{name} · {direction}", *(f"{group['base'].get(flag, 0)} → {group['tuned'].get(flag, 0)}"
+                                    for flag in flags))
+         for model, name in (("madlad", "MADLAD"), ("gemma", "Gemma"))
+         for direction, group in diagnostics[model].items()],
+    )
+    cases = []
     for model, direction in REVIEW_CASES:
-        cases = examples[model][direction]
-        case = cases.get("reviewed", cases["median"])
-        fields = "".join(f"<p><b>{label}</b> {escape(visible_text(case[key]))}</p>"
+        options = examples[model][direction]
+        case = options.get("reviewed", options["median"])
+        fields = "".join(f"<dt>{label}</dt><dd>{escape(visible_text(case[key]))}</dd>"
                          for label, key in (("Source", "source"), ("Reference", "reference"),
-                                            ("Base", "base"), ("Tuned", "tuned")))
-        case_html.append(f"<div class='case'><h3>{MODELS[model]}, {DIRECTIONS[direction]}, "
-                         f"{case['id']}</h3>{fields}</div>")
-    manual = output / "linguistic-observations.txt"
-    observations = escape(manual.read_text().strip()) if manual.exists() else (
-        "Examples are ranked using sentence chrF++. Their comparison can expose script and copying "
-        "failures, but validating omissions or semantic equivalence requires bilingual review.")
+                                            ("Zero-shot", "base"), ("Fine-tuned", "tuned")))
+        cases.append(f"<article><h3>{MODELS[model]} · {DIRECTIONS[direction]}</h3>"
+                     f"<dl>{fields}</dl></article>")
+    madlad_gain = scores["madlad"]["delta"]["en-brx"]["chrf++"]
+    gemma_bodo = diagnostics["gemma"]["en-brx"]
+    gemma_repetitions = gemma_bodo["tuned"].get("repeated_trigram", 0)
+    script_base = gemma_bodo["base"]["unexpected_majority_script"]
+    script_tuned = gemma_bodo["tuned"]["unexpected_majority_script"]
     html = f"""
+    <!doctype html>
+    <html lang="en"><head><meta charset="utf-8"><title>Low-resource machine translation</title>
     <style>
-    @page {{ size: A4; margin: 15mm 19mm; @bottom-center {{ content: counter(page); }} }}
-    body {{ font: 10.3pt/1.37 'Noto Serif', 'Noto Sans Devanagari', serif; color: #171b20; }}
-    h1 {{ font-size: 24pt; margin: 0 0 10pt; line-height: 1.15; }}
-    h2 {{ font-size: 14pt; margin: 13pt 0 4pt; }}
-    h3 {{ font-size: 10.4pt; margin: 8pt 0 3pt; }}
-    p {{ margin: 4pt 0 7pt; }}
-    table {{ border-collapse: collapse; width: 100%; font-size: 8.5pt; margin: 8pt 0; }}
-    th,td {{ text-align: left; padding: 3pt; }}
-    th {{ border-top: 1pt solid; border-bottom: .5pt solid; }}
-    tr:last-child td {{ border-bottom: .5pt solid; }}
-    figure {{ margin: 10pt 0; }}
-    figcaption {{ font-size: 9pt; }}
-    img {{ width: 100%; }}
-    .results img {{ display: block; width: 87%; margin: 0 auto; }}
-    section {{ break-before: page; }}
-    .case {{ break-inside: avoid; }} .case p {{ margin: 2pt 0; font-size: 9pt; overflow-wrap: anywhere; }}
-    </style>
-    <h1>One-epoch adaptation for English–Khasi and English–Bodo translation</h1>
-    <p><b>Abstract.</b> I compared zero-shot and supervised translation with a pretrained
-    encoder–decoder and a causal language model. Both received the same English-centric pairs
-    in both directions. {' '.join(notes)}</p>
-    <h2>1. Data</h2>
-    <p>The WMT26 archive supplies Khasi in Category 1 and Bodo in Category 2.
-    I excluded repeated normalized sides and overlap with the official sources before creating
-    deterministic validation and test holdouts. The four official lists contain 1,000 IDs each
-    and have no supplied references. The internal scores estimate performance on the training
-    corpus distribution. Official translations are packaged separately from this evaluation.</p>
-    {data_table}
-    <figure><img src="lengths.svg"><figcaption>Figure 1. Empirical whitespace-token length
-    distributions. The horizontal axis displays lengths up to 100 tokens.</figcaption></figure>
-    <p>Eight evenly spaced pairs per language were inspected. Khasi samples are mostly biblical,
-    with archaic English and occasional spacing around punctuation. The sampled Bodo rows include
-    history, everyday descriptions, regional culture, headlines and economic text. Khasi had 91
-    English-to-Khasi length ratios outside [0.33, 3] and two extreme inspected rows appeared to pair
-    verse text with a heading or larger passage. Bodo had {stats['brx']['normalized_pair_duplicates']:,} normalized duplicate pairs.
-    Escaped spreadsheet character patterns occurred in {stats['brx']['excel_escape_rows']} Bodo rows.
-    Khasi primarily uses Latin letters and Bodo primarily uses Devanagari. The larger Khasi corpus
-    may offer a stronger in-domain learning signal. Its biblical concentration also makes transfer
-    to the contemporary official news sources uncertain.</p>
-    <section class="results"><h2>2. Method and results</h2>
-    <p>MADLAD uses target prefixes &lt;2en&gt;, &lt;2kha&gt; and &lt;2brx&gt;. Gemma uses
-    its official chat template and a translation-only instruction.
-    I trained each model for one epoch using BF16 and NF4 QLoRA (rank 16, alpha 32, AdamW, initial
-    learning rate 2 × 10⁻⁴, seed 42). Causal loss covers response tokens and the end-of-turn marker. I selected
-    adapters by validation loss and decoded both versions greedily in BF16 with a 256-token limit.
-    BLEU uses 13a tokenization, and chrF++ includes word bigrams.</p>
-    {score_table}
-    <figure><img src="improvements.svg"><figcaption>Figure 2. Changes relative to zero-shot
-    performance on identical internal test examples.</figcaption></figure>
-    <figure><img src="training.svg"><figcaption>Figure 3. Training logs and held-out
-    validation loss. Training and validation series are sampled at different intervals.</figcaption></figure>
-    <p>{comparison} {' '.join(differences)} These are unweighted averages over directions.
-    Domains, scripts, pretraining coverage, model sizes and tokenizers differ across the study.
-    Results use one seed and support a descriptive comparison.</p></section>
-    <section><h2>3. Translation errors</h2>
-    <p>The table counts automatic flags. A short output has fewer than half the reference's
-    whitespace tokens. Repetition means the same trigram occurs at least three times. The script
-    flag detects when over half the letters fall outside the expected script. Source copying
-    requires full normalized equality. Other diagnostics track embedded source text and absent
-    numerals present in both source and reference. These checks are sensitive
-    to differences in word segmentation.</p>
-    {diagnostic_table}
-    {''.join(case_html)}
-    <p>{observations}</p>
-    <h2>References</h2>
-    <p>Pakray et al., <a href="https://aclanthology.org/2026.wmt-main.53/">WMT26 Indic MT findings</a>
-    (2026). Related shared-task findings appeared in
-    <a href="https://aclanthology.org/2023.wmt-1.56/">2023</a>,
-    <a href="https://aclanthology.org/2024.wmt-1.54/">2024</a>, and
-    <a href="https://aclanthology.org/2025.wmt-1.29/">2025</a>.
-    Kudugunta et al., MADLAD-400 (2023). Google, Gemma 3 Technical Report (2025).
-    Dettmers et al., QLoRA (2023).
-    Post, A Call for Clarity in Reporting BLEU Scores (2018). Popović, chrF++ (2017).</p></section>
+    @page {{
+      size: A4; margin: 15mm 17mm 17mm;
+      @bottom-left {{ content: "LOW-RESOURCE MACHINE TRANSLATION"; font: 8pt 'Noto Sans'; color: #52646d; }}
+      @bottom-right {{ content: counter(page) " / " counter(pages); font: 8pt 'Noto Sans'; color: #52646d; }}
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin: 0; font: 9.5pt/1.46 'Noto Sans', 'Noto Sans Devanagari', sans-serif; color: #172d36; }}
+    section + section {{ break-before: page; }}
+    header {{ border-top: 3pt solid #146b72; padding-top: 9pt; margin-bottom: 10pt; }}
+    h1,h2,h3,p,figure,dl {{ margin: 0; }}
+    h1 {{ font: bold 31pt/1.06 'Noto Serif', serif; letter-spacing: -.7pt; max-width: 160mm; }}
+    h2 {{ font: bold 23pt/1.12 'Noto Serif', serif; letter-spacing: -.35pt; }}
+    h3 {{ font-size: 10pt; line-height: 1.25; margin-bottom: 4pt; }}
+    header p {{ margin-top: 6pt; }}
+    .lead {{ color: #405760; font-size: 10pt; }}
+    .grid {{ display: flex; gap: 12pt; }}
+    .grid > * {{ flex: 1; min-width: 0; }}
+    .method > div {{ padding-top: 7pt; border-top: .7pt solid #b9cbce; }}
+    .method p + p {{ margin-top: 5pt; }}
+    aside {{ background: #e9f3f2; border-left: 3pt solid #146b72; padding: 8pt 10pt; margin: 8pt 0 10pt; }}
+    aside strong {{ color: #12585e; }}
+    table {{ width: 100%; border-collapse: collapse; margin: 7pt 0 9pt; font-size: 8pt; }}
+    th,td {{ text-align: left; padding: 4pt 5pt; border-bottom: .5pt solid #cfdbde; }}
+    th {{ background: #143b46; color: white; font-weight: bold; }}
+    tr:nth-child(even) td {{ background: #f1f6f6; }}
+    figure {{ border: .6pt solid #ccd9dc; padding: 6pt 8pt; margin: 8pt 0 10pt; }}
+    figure img {{ display: block; width: 100%; margin: 0 auto; }}
+    .result-figure img {{ width: 84%; }}
+    figcaption,.small {{ color: #405760; font-size: 8.2pt; line-height: 1.42; }}
+    figcaption {{ margin-top: 4pt; }}
+    article {{ background: #edf4f4; padding: 8pt; }}
+    dt {{ font-weight: bold; color: #165d65; font-size: 7.5pt; }}
+    dd {{ margin: 0 0 4pt; font-size: 8pt; overflow-wrap: anywhere; }}
+    dd:last-child {{ margin-bottom: 0; }}
+    .analysis {{ margin-top: 8pt; }}
+    footer {{ border-top: .7pt solid #b9cbce; padding-top: 5pt; margin-top: 8pt; }}
+    a {{ color: #145e66; }}
+    </style></head><body>
+    <section>
+      <header><h1>Low-resource machine translation</h1>
+      <p class="lead">English ↔ Khasi and English ↔ Bodo · WMT26 Indic MT</p></header>
+      <p>I compared two pretrained models before and after one epoch of supervised fine-tuning.
+      I used the same <strong>70,608 directed training examples</strong> for MADLAD-400 3B and
+      Gemma 3 1B, then evaluated both versions on matching holdouts.</p>
+      {data_table}
+      <figure><img src="lengths.svg" alt="Two cumulative sentence-length charts for Khasi and Bodo">
+      <figcaption><strong>Sentence lengths.</strong> Cumulative distributions of whitespace-token lengths.
+      The horizontal axis shows up to 100 tokens.</figcaption></figure>
+      <div class="grid method">
+        <div><h3>Prepare the data</h3>
+        <p>I inspected eight pairs per language. Khasi samples were mostly biblical. Bodo samples covered
+        history, daily life, and news. The Bodo corpus contained {stats['brx']['normalized_pair_duplicates']:,}
+        normalized duplicate pairs and {stats['brx']['excel_escape_rows']} rows with spreadsheet escape patterns.</p>
+        <p>I screened for normalized duplicates and official-source overlap before creating fixed validation
+        and test splits. The four official lists supplied 4,000 source sentences without references.</p></div>
+        <div><h3>Check, train, and evaluate</h3>
+        <p>I tested NF4 loading, optimizer updates, adapter reloads, and checkpoint recovery, then used
+        A40 benchmarks to choose the batch sizes.</p>
+        <p>I trained with BF16 NF4 QLoRA, rank 16, alpha 32, AdamW, learning rate 2 × 10⁻⁴, and seed 42.
+        I used MADLAD target tags and Gemma’s chat template, masking Gemma’s prompt from the loss.
+        I used an effective batch of 64 examples for each model, chose checkpoints by validation loss,
+        and decoded greedily with up to 256 new tokens.</p></div>
+      </div>
+    </section>
+    <section>
+      <header><h2>What changed after fine-tuning</h2>
+      <p class="lead">Corpus BLEU and chrF++ on 3,274 labeled test examples</p></header>
+      {score_table}
+      <p class="small">Each cell shows zero-shot → fine-tuned. I used SacreBLEU with 13a tokenization
+      and chrF++ with word bigrams. I generated official predictions separately for all four systems.</p>
+      <aside><strong>MADLAD improved on both metrics in all four directions.</strong>
+      Its largest chrF++ gain was {madlad_gain:+.2f} for English → Bodo. Gemma’s results were mixed,
+      including a drop in Khasi → English chrF++ and English → Bodo BLEU.</aside>
+      <figure class="result-figure"><img src="improvements.svg" alt="Changes in BLEU and chrF++ by model and direction">
+      <figcaption><strong>Score changes.</strong> Each bar shows the point change from the matching zero-shot baseline.</figcaption></figure>
+      <figure class="result-figure"><img src="training.svg" alt="Training and validation loss for MADLAD and Gemma">
+      <figcaption><strong>Training progress.</strong> Validation loss fell across the four evaluated checkpoints for each model.</figcaption></figure>
+      <p class="small">Both tuned models averaged higher chrF++ into English. Both also averaged higher
+      chrF++ on Khasi directions. Corpus size, domain, script, tokenization, model size, and pretraining
+      differ across these comparisons. The study used one seed.</p>
+    </section>
+    <section>
+      <header><h2>Where translations still failed</h2>
+      <p class="lead">Automatic checks and examples from the labeled holdouts</p></header>
+      {diagnostic_table}
+      <p class="small">Counts show zero-shot → fine-tuned. A copy matches the normalized source.
+      Short means under half the reference’s whitespace-token count. A repetition flag requires the
+      same trigram at least three times. The script flag checks the majority letter script.</p>
+      <aside>For Gemma in English → Bodo, script flags fell from <strong>{script_base} to {script_tuned}</strong>
+      out of 637 outputs. After fine-tuning, <strong>{gemma_repetitions}</strong> outputs triggered the repetition check.</aside>
+      <div class="grid">{''.join(cases)}</div>
+      <p class="analysis">In the MADLAD example, fine-tuning removed the English copy and produced
+      Devanagari text with recognizable forms of Michael Jordan and basketball. In the Gemma example,
+      fine-tuning recovered Tom and 2:30 but still omitted the homecoming.</p>
+      <p class="analysis">I found other meaning errors when comparing outputs with English references.
+      MADLAD turned a song into a taxi company. Gemma changed a question about Bitcoin crossing a
+      threshold into a question about whether it had already reached it. I did not conduct a bilingual adequacy review.</p>
+      <footer class="small"><strong>Sources</strong> · <a href="https://aclanthology.org/2026.wmt-main.53/">WMT26 Indic MT findings</a>.
+      Kudugunta et al., MADLAD-400 (2023). Google, Gemma 3 Technical Report (2025).
+      Dettmers et al., QLoRA (2023). Post, BLEU reporting (2018). Popović, chrF++ (2017).</footer>
+    </section>
+    </body></html>
     """
     path = output / "report.pdf"
     HTML(string=html, base_url=str(output.resolve())).write_pdf(path)
     with pymupdf.open(path) as pdf:
-        if not 2 <= len(pdf) <= 4:
+        if len(pdf) != 3:
             raise ValueError(f"Report has {len(pdf)} pages")
         text = "".join(page.get_text() for page in pdf)
         assert any("DEVANAGARI" in ud.name(char, "") for char in text)
         assert "\ufffd" not in text
         for index, page in enumerate(pdf, 1):
-            page.get_pixmap(dpi=120).save(output / f"report-page-{index}.png")
+            page.get_pixmap(dpi=110).save(output / f"report-page-{index}.png")
 
 
 def archive_results(root, archive):
