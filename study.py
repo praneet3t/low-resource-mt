@@ -24,7 +24,7 @@ from prepare import LANGUAGES, SEED, read_jsonl, write_json
 
 MODELS = {
     "madlad": ("google/madlad400-3b-mt", "fa184c675da0b5c9e1c8694fccd4e12e2d422094"),
-    "qwen": ("Qwen/Qwen3-1.7B", "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"),
+    "gemma": ("google/gemma-3-1b-it", "dcc83ea841ab6100d6b47a070329e1ba4cf78752"),
 }
 NAMES = {"en": "English", **LANGUAGES}
 
@@ -60,8 +60,7 @@ def encode_source(tokenizer, row, seq2seq):
     prompt = (f"Translate the following text from {NAMES[source]} to {NAMES[target]}. "
               f"Return only the translation.\n\n{row['source']}")
     return tokenizer.apply_chat_template([{"role": "user", "content": prompt}],
-                                         tokenize=True, add_generation_prompt=True,
-                                         enable_thinking=False)
+                                         tokenize=True, add_generation_prompt=True)
 
 
 def encode_target(tokenizer, row, seq2seq):
@@ -73,7 +72,9 @@ def encode_target(tokenizer, row, seq2seq):
         source_row = row | {"source": shortened}
         source = encode_source(tokenizer, source_row, seq2seq)
     reference = tokenizer.encode(row["reference"], add_special_tokens=False)
-    labels = reference[:255] + [tokenizer.eos_token_id]
+    end = tokenizer.eos_token_id if seq2seq else tokenizer.convert_tokens_to_ids("<end_of_turn>")
+    assert end is not None and end != tokenizer.unk_token_id
+    labels = reference[:255] + [end]
     if seq2seq:
         return {"input_ids": source, "labels": labels}
     return {"input_ids": source + labels, "labels": [-100] * len(source) + labels}
@@ -126,6 +127,28 @@ def metrics(rows):
     return scores
 
 
+def decode_batch(model, tokenizer, sequences, seq2seq, max_tokens):
+    inputs = tokenizer.pad([{"input_ids": ids} for ids in sequences],
+                           pad_to_multiple_of=8, return_tensors="pt").to("cuda")
+    result = model.generate(**inputs, do_sample=False, num_beams=1, use_cache=True,
+                            max_new_tokens=max_tokens, pad_token_id=tokenizer.pad_token_id)
+    if not seq2seq:
+        result = result[:, inputs.input_ids.shape[1]:]
+    return tokenizer.batch_decode(result, skip_special_tokens=True)
+
+
+def decode_with_backoff(model, tokenizer, sequences, seq2seq, max_tokens):
+    try:
+        return decode_batch(model, tokenizer, sequences, seq2seq, max_tokens)
+    except torch.OutOfMemoryError:
+        if len(sequences) == 1:
+            raise
+    torch.cuda.empty_cache()
+    middle = len(sequences) // 2
+    return (decode_with_backoff(model, tokenizer, sequences[:middle], seq2seq, max_tokens)
+            + decode_with_backoff(model, tokenizer, sequences[middle:], seq2seq, max_tokens))
+
+
 @torch.inference_mode()
 def generate(model, tokenizer, rows, seq2seq, batch_size, max_tokens):
     with ThreadPoolExecutor(max_workers=8) as workers:
@@ -133,13 +156,8 @@ def generate(model, tokenizer, rows, seq2seq, batch_size, max_tokens):
     order = sorted(range(len(rows)), key=lambda i: len(encoded[i]))
     for start in range(0, len(order), batch_size):
         indices = order[start:start + batch_size]
-        inputs = tokenizer.pad([{"input_ids": encoded[i]} for i in indices],
-                               pad_to_multiple_of=8, return_tensors="pt").to("cuda")
-        result = model.generate(**inputs, do_sample=False, num_beams=1, use_cache=True,
-                                max_new_tokens=max_tokens, pad_token_id=tokenizer.pad_token_id)
-        if not seq2seq:
-            result = result[:, inputs.input_ids.shape[1]:]
-        for i, prediction in zip(indices, tokenizer.batch_decode(result, skip_special_tokens=True)):
+        decoded = decode_with_backoff(model, tokenizer, [encoded[i] for i in indices], seq2seq, max_tokens)
+        for i, prediction in zip(indices, decoded):
             yield i, prediction.strip()
 
 

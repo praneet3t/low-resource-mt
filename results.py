@@ -3,6 +3,7 @@ from collections import Counter
 from html import escape
 import json
 from pathlib import Path
+import tarfile
 import unicodedata as ud
 
 import matplotlib
@@ -12,12 +13,12 @@ import pymupdf
 from sacrebleu.metrics import CHRF
 from weasyprint import HTML
 
-from prepare import LANGUAGES, normalize, scripts, write_json
+from prepare import LANGUAGES, normalize, read_jsonl, scripts, write_json
 
 
 DIRECTIONS = {"en-kha": "English → Khasi", "kha-en": "Khasi → English",
               "en-brx": "English → Bodo", "brx-en": "Bodo → English"}
-MODELS = {"madlad": "MADLAD-400 3B", "qwen": "Qwen3-1.7B"}
+MODELS = {"madlad": "MADLAD-400 3B", "gemma": "Gemma 3 1B"}
 COLORS = ["#32618e", "#ad532c"]
 
 
@@ -74,6 +75,8 @@ def aggregate(root, output):
     fig, axes = plt.subplots(1, 2, figsize=(6.7, 2.5), layout="constrained", sharey=True)
     scores, diagnostics, examples = {}, {}, {}
     chrf = CHRF(word_order=2)
+    official = read_jsonl(root / "data/official.jsonl")
+    test = read_jsonl(root / "data/test.jsonl")
     for model in MODELS:
         paths = {stage: root / stage / model for stage in ("base", "tuned")}
         scores[model] = {stage: read(path / "metrics.json") for stage, path in paths.items()}
@@ -83,8 +86,13 @@ def aggregate(root, output):
             for d in DIRECTIONS
         }
         rows = {stage: read(path / "test.json") for stage, path in paths.items()}
-        for key in ("id", "direction", "source", "reference"):
-            assert [row[key] for row in rows["base"]] == [row[key] for row in rows["tuned"]]
+        for stage, path in paths.items():
+            for filename, expected, actual in (("test", test, rows[stage]),
+                                               ("official", official, read(path / "official.json"))):
+                observed = [{key: value for key, value in row.items() if key != "translation"} for row in actual]
+                assert observed == expected, (model, stage, filename)
+                assert all(isinstance(row["translation"], str) for row in actual)
+
         diagnostics[model], examples[model] = {}, {}
         for direction in DIRECTIONS:
             aligned = [(base, tuned) for base, tuned in zip(rows["base"], rows["tuned"])
@@ -182,7 +190,7 @@ def report(output, stats, scores, diagnostics, examples):
             ])
     diagnostic_table = table(("Model", "Direction", "Source copy", "Short", "Repetition", "Script"), diagnostic_rows)
     case_html = []
-    for model, direction in (("madlad", "en-kha"), ("qwen", "en-brx")):
+    for model, direction in (("madlad", "en-kha"), ("gemma", "en-brx")):
         case = examples[model][direction]["median"]
         fields = "".join(f"<p><b>{label}</b> {escape(visible_text(case[key]))}</p>"
                          for label, key in (("Source", "source"), ("Reference", "reference"),
@@ -233,10 +241,10 @@ def report(output, stats, scores, diagnostics, examples):
     Khasi primarily uses Latin letters and Bodo primarily uses Devanagari. The official English
     sources include contemporary news, suggesting domain shift for Khasi.</p>
     <section><h2>2. Method and results</h2>
-    <p>MADLAD uses target prefixes &lt;2en&gt;, &lt;2kha&gt; and &lt;2brx&gt;. Qwen uses
-    its official chat template with thinking disabled and a translation-only instruction.
+    <p>MADLAD uses target prefixes &lt;2en&gt;, &lt;2kha&gt; and &lt;2brx&gt;. Gemma uses
+    its official chat template and a translation-only instruction.
     Each model trains one epoch using BF16 and NF4 QLoRA (rank 16, alpha 32, AdamW, initial
-    learning rate 2 × 10⁻⁴, seed 42). Causal loss covers response tokens and EOS. We select
+    learning rate 2 × 10⁻⁴, seed 42). Causal loss covers response tokens and the end-of-turn marker. We select
     adapters by validation loss and decode both versions greedily in BF16 with a 256-token limit.
     BLEU uses 13a tokenization, and chrF++ includes word bigrams.</p>
     {score_table}
@@ -258,7 +266,7 @@ def report(output, stats, scores, diagnostics, examples):
     <p>{observations}</p>
     <h2>References</h2>
     <p>WMT 2026, Low-Resource Indic Language Translation shared task. Kudugunta et al.,
-    MADLAD-400 (2023). Qwen Team, Qwen3 Technical Report (2025). Dettmers et al., QLoRA (2023).
+    MADLAD-400 (2023). Google, Gemma 3 Technical Report (2025). Dettmers et al., QLoRA (2023).
     Post, A Call for Clarity in Reporting BLEU Scores (2018). Popović, chrF++ (2017).</p></section>
     """
     path = output / "report.pdf"
@@ -273,10 +281,30 @@ def report(output, stats, scores, diagnostics, examples):
             page.get_pixmap(dpi=120).save(output / f"report-page-{index}.png")
 
 
+def archive_results(root, archive):
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(archive, "w:gz") as bundle:
+        def retain(info):
+            if ".partial." in info.name or "/report-page-" in info.name:
+                return None
+            return info
+
+        for directory in ("results", "train", "base", "tuned", "benchmark"):
+            bundle.add(root / directory, arcname=directory, filter=retain)
+        for name in ("eda.json", "inspection.json"):
+            bundle.add(root / "data" / name, arcname=f"data-audit/{name}")
+        for name in ("README.md", "requirements.txt", "prepare.py", "study.py", "results.py"):
+            bundle.add(Path(__file__).with_name(name), arcname=f"reproduction/{name}")
+        for path in sorted(root.glob("*.log")):
+            if "qwen" not in path.name:
+                bundle.add(path, arcname=f"logs/{path.name}")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=Path("runs"))
     parser.add_argument("--eda-only", action="store_true")
+    parser.add_argument("--archive", type=Path)
     args = parser.parse_args()
     output = args.root / "results"
     output.mkdir(parents=True, exist_ok=True)
@@ -286,3 +314,5 @@ if __name__ == "__main__":
     if not args.eda_only:
         curves(args.root, output)
         report(output, statistics, *aggregate(args.root, output))
+        if args.archive:
+            archive_results(args.root, args.archive)
