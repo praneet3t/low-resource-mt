@@ -205,7 +205,49 @@ def visible_text(text):
     return excerpt + ("…" if len(text) > 360 else "")
 
 
+def training_architectures(output):
+    from matplotlib.patches import Rectangle
+
+    fig, ax = plt.subplots(figsize=(8, 1.95))
+    fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
+    ax.set(xlim=(0, 800), ylim=(0, 195))
+    ax.axis("off")
+
+    def box(x, y, width, label, trainable=False):
+        ax.add_patch(Rectangle((x, y), width, 38,
+                               facecolor="#e7edf4" if trainable else "#f7f7f7",
+                               edgecolor="#404b58", linewidth=.7))
+        ax.text(x + width / 2, y + 19, label, ha="center", va="center",
+                fontsize=8, linespacing=1.2, color="#17212b")
+
+    def arrow(x, y, end):
+        ax.annotate("", (end, y), (x, y),
+                    arrowprops={"arrowstyle": "->", "linewidth": .8, "color": "#404b58"})
+
+    ax.text(4, 181, "(a) MADLAD-400 3B · encoder–decoder", fontsize=9, weight="bold")
+    box(4, 132, 141, "Target tag + source")
+    arrow(145, 151, 161)
+    box(161, 132, 126, "Frozen NF4 T5 encoder\n+ Q/V LoRA", True)
+    arrow(287, 151, 303)
+    box(303, 132, 290, "Frozen NF4 T5 decoder + rank-16 Q/V LoRA\nEncoder states and shifted target tokens", True)
+    arrow(593, 151, 610)
+    box(610, 132, 186, "Cross-entropy\nover target tokens")
+
+    ax.text(4, 110, "(b) Gemma 3 1B · decoder-only", fontsize=9, weight="bold")
+    box(4, 61, 199, "Chat-formatted prompt + target")
+    arrow(203, 80, 219)
+    box(219, 61, 374, "Frozen NF4 causal decoder + rank-16 Q/V LoRA\nCausal attention over the combined sequence", True)
+    arrow(593, 80, 610)
+    box(610, 61, 186, "Target-only cross-entropy\nPrompt labels masked")
+
+    ax.text(4, 31, "For both models, Q/V LoRA weights are trainable in the attention layers.", fontsize=8)
+    ax.text(4, 11, "One epoch  →  lowest validation loss  →  greedy decoding  →  BLEU and chrF++",
+            fontsize=8, color="#17212b")
+    finish(fig, output, "architectures")
+
+
 def report(output, stats, scores, diagnostics, examples):
+    training_architectures(output)
     def score_pair(model, direction, metric):
         base = scores[model]["base"][direction][metric]
         tuned = scores[model]["tuned"][direction][metric]
@@ -251,16 +293,16 @@ def report(output, stats, scores, diagnostics, examples):
     <style>
     @page {{
       size: A4; margin: 15mm 17mm 17mm;
-      @bottom-left {{ content: "LOW-RESOURCE MACHINE TRANSLATION"; font: 8pt 'Noto Sans'; color: #52646d; }}
+      @bottom-left {{ content: "Low-resource machine translation"; font: 8pt 'Noto Sans'; color: #52646d; }}
       @bottom-right {{ content: counter(page) " / " counter(pages); font: 8pt 'Noto Sans'; color: #52646d; }}
     }}
     * {{ box-sizing: border-box; }}
-    body {{ margin: 0; font: 9.5pt/1.46 'Noto Sans', 'Noto Sans Devanagari', sans-serif; color: #172d36; }}
+    body {{ margin: 0; font: 9.3pt/1.37 'Noto Serif', 'Noto Sans Devanagari', serif; color: #191919; }}
     section + section {{ break-before: page; }}
-    header {{ border-top: 3pt solid #146b72; padding-top: 9pt; margin-bottom: 10pt; }}
+    header {{ margin-bottom: 9pt; }}
     h1,h2,h3,p,figure,dl {{ margin: 0; }}
-    h1 {{ font: bold 31pt/1.06 'Noto Serif', serif; letter-spacing: -.7pt; max-width: 160mm; }}
-    h2 {{ font: bold 23pt/1.12 'Noto Serif', serif; letter-spacing: -.35pt; }}
+    h1 {{ font: bold 25pt/1.12 'Noto Serif', serif; letter-spacing: -.7pt; max-width: 160mm; }}
+    h2 {{ font: bold 17pt/1.16 'Noto Serif', serif; letter-spacing: -.35pt; }}
     h3 {{ font-size: 10pt; line-height: 1.25; margin-bottom: 4pt; }}
     header p {{ margin-top: 6pt; }}
     .lead {{ color: #405760; font-size: 10pt; }}
@@ -268,19 +310,20 @@ def report(output, stats, scores, diagnostics, examples):
     .grid > * {{ flex: 1; min-width: 0; }}
     .method > div {{ padding-top: 7pt; border-top: .7pt solid #b9cbce; }}
     .method p + p {{ margin-top: 5pt; }}
-    aside {{ background: #e9f3f2; border-left: 3pt solid #146b72; padding: 8pt 10pt; margin: 8pt 0 10pt; }}
-    aside strong {{ color: #12585e; }}
+    aside {{ margin: 6pt 0 8pt; }}
+    aside strong {{ color: #202020; }}
     table {{ width: 100%; border-collapse: collapse; margin: 7pt 0 9pt; font-size: 8pt; }}
     th,td {{ text-align: left; padding: 4pt 5pt; border-bottom: .5pt solid #cfdbde; }}
-    th {{ background: #143b46; color: white; font-weight: bold; }}
-    tr:nth-child(even) td {{ background: #f1f6f6; }}
-    figure {{ border: .6pt solid #ccd9dc; padding: 6pt 8pt; margin: 8pt 0 10pt; }}
+    th {{ border-top: .8pt solid #222; border-bottom: .7pt solid #222; font-weight: bold; }}
+    tr:last-child td {{ border-bottom: .8pt solid #222; }}
+    figure {{ margin: 7pt 0 9pt; break-inside: avoid; }}
+    .lengths img {{ width: 85%; }}
     figure img {{ display: block; width: 100%; margin: 0 auto; }}
     .result-figure img {{ width: 84%; }}
     figcaption,.small {{ color: #405760; font-size: 8.2pt; line-height: 1.42; }}
     figcaption {{ margin-top: 4pt; }}
-    article {{ background: #edf4f4; padding: 8pt; }}
-    dt {{ font-weight: bold; color: #165d65; font-size: 7.5pt; }}
+    article {{ border-top: .7pt solid #57626e; padding: 6pt 0; }}
+    dt {{ font-weight: bold; color: #303944; font-size: 7.5pt; }}
     dd {{ margin: 0 0 4pt; font-size: 8pt; overflow-wrap: anywhere; }}
     dd:last-child {{ margin-bottom: 0; }}
     .analysis {{ margin-top: 8pt; }}
@@ -294,9 +337,13 @@ def report(output, stats, scores, diagnostics, examples):
       I used the same <strong>70,608 directed training examples</strong> for MADLAD-400 3B and
       Gemma 3 1B, then evaluated both versions on matching holdouts.</p>
       {data_table}
-      <figure><img src="lengths.svg" alt="Two cumulative sentence-length charts for Khasi and Bodo">
-      <figcaption><strong>Sentence lengths.</strong> Cumulative distributions of whitespace-token lengths.
+      <figure class="lengths"><img src="lengths.svg" alt="Two cumulative sentence-length charts for Khasi and Bodo">
+      <figcaption><strong>Figure 1.</strong> Cumulative distributions of whitespace-token lengths.
       The horizontal axis shows up to 100 tokens.</figcaption></figure>
+      <figure><img src="architectures.svg" alt="MADLAD encoder–decoder and Gemma decoder-only QLoRA training paths">
+      <figcaption><strong>Figure 2.</strong> Fine-tuning architectures. I supplied the same parallel examples
+      to both models and updated their attention Q/V adapters. In MADLAD, LoRA also applies to encoder attention
+      and decoder cross-attention.</figcaption></figure>
       <div class="grid method">
         <div><h3>Prepare the data</h3>
         <p>I inspected eight pairs per language. Khasi samples were mostly biblical. Bodo samples covered
@@ -308,13 +355,14 @@ def report(output, stats, scores, diagnostics, examples):
         <p>I tested NF4 loading, optimizer updates, adapter reloads, and checkpoint recovery, then used
         A40 benchmarks to choose the batch sizes.</p>
         <p>I trained with BF16 NF4 QLoRA, rank 16, alpha 32, AdamW, learning rate 2 × 10⁻⁴, and seed 42.
-        I used MADLAD target tags and Gemma’s chat template, masking Gemma’s prompt from the loss.
-        I used an effective batch of 64 examples for each model, chose checkpoints by validation loss,
-        and decoded greedily with up to 256 new tokens.</p></div>
+        I used MADLAD target tags (&lt;2en&gt;, &lt;2kha&gt;, &lt;2brx&gt;) and Gemma’s chat template,
+        masking Gemma’s prompt labels.
+        I used an effective batch of 64, evaluated at each quarter epoch, and selected the checkpoint with
+        lowest validation loss. For both baselines and tuned models, I used BF16 greedy decoding with up to 256 new tokens.</p></div>
       </div>
     </section>
     <section>
-      <header><h2>What changed after fine-tuning</h2>
+      <header><h2>Results</h2>
       <p class="lead">Corpus BLEU and chrF++ on 3,274 labeled test examples</p></header>
       {score_table}
       <p class="small">Each cell shows zero-shot → fine-tuned. I used SacreBLEU with 13a tokenization
@@ -323,15 +371,15 @@ def report(output, stats, scores, diagnostics, examples):
       Its largest chrF++ gain was {madlad_gain:+.2f} for English → Bodo. Gemma’s results were mixed,
       including a drop in Khasi → English chrF++ and English → Bodo BLEU.</aside>
       <figure class="result-figure"><img src="improvements.svg" alt="Changes in BLEU and chrF++ by model and direction">
-      <figcaption><strong>Score changes.</strong> Each bar shows the point change from the matching zero-shot baseline.</figcaption></figure>
+      <figcaption><strong>Figure 3.</strong> Each bar shows the point change from the matching zero-shot baseline.</figcaption></figure>
       <figure class="result-figure"><img src="training.svg" alt="Training and validation loss for MADLAD and Gemma">
-      <figcaption><strong>Training progress.</strong> Validation loss fell across the four evaluated checkpoints for each model.</figcaption></figure>
+      <figcaption><strong>Figure 4.</strong> Validation loss fell across the four evaluated checkpoints for each model.</figcaption></figure>
       <p class="small">Both tuned models averaged higher chrF++ into English. Both also averaged higher
       chrF++ on Khasi directions. Corpus size, domain, script, tokenization, model size, and pretraining
       differ across these comparisons. The study used one seed.</p>
     </section>
     <section>
-      <header><h2>Where translations still failed</h2>
+      <header><h2>Error analysis and limitations</h2>
       <p class="lead">Automatic checks and examples from the labeled holdouts</p></header>
       {diagnostic_table}
       <p class="small">Counts show zero-shot → fine-tuned. A copy matches the normalized source.
