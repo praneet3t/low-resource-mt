@@ -223,7 +223,7 @@ def report(output, stats, scores, diagnostics, examples):
                            f"and an into-English-minus-out-of-English gap of {direction_gap:+.2f}.")
     head_to_head = sum(scores["madlad"]["tuned"][d]["chrf++"] > scores["gemma"]["tuned"][d]["chrf++"]
                        for d in DIRECTIONS)
-    comparison = f"Tuned MADLAD had higher chrF++ than tuned Gemma in {head_to_head} of four directions."
+    comparison = f"Tuned MADLAD had higher chrF++ than tuned Gemma in {head_to_head} of 4 directions."
     diagnostic_rows = []
     for model, title in MODELS.items():
         for direction, label in DIRECTIONS.items():
@@ -249,8 +249,8 @@ def report(output, stats, scores, diagnostics, examples):
         "failures, but validating omissions or semantic equivalence requires bilingual review.")
     html = f"""
     <style>
-    @page {{ size: A4; margin: 17mm 19mm; @bottom-center {{ content: counter(page); }} }}
-    body {{ font: 10.6pt/1.43 'Noto Serif', 'Noto Sans Devanagari', serif; color: #171b20; }}
+    @page {{ size: A4; margin: 15mm 19mm; @bottom-center {{ content: counter(page); }} }}
+    body {{ font: 10.3pt/1.37 'Noto Serif', 'Noto Sans Devanagari', serif; color: #171b20; }}
     h1 {{ font-size: 24pt; margin: 0 0 10pt; line-height: 1.15; }}
     h2 {{ font-size: 14pt; margin: 13pt 0 4pt; }}
     h3 {{ font-size: 10.4pt; margin: 8pt 0 3pt; }}
@@ -262,6 +262,7 @@ def report(output, stats, scores, diagnostics, examples):
     figure {{ margin: 10pt 0; }}
     figcaption {{ font-size: 9pt; }}
     img {{ width: 100%; }}
+    .results img {{ display: block; width: 87%; margin: 0 auto; }}
     section {{ break-before: page; }}
     .case {{ break-inside: avoid; }} .case p {{ margin: 2pt 0; font-size: 9pt; overflow-wrap: anywhere; }}
     </style>
@@ -287,7 +288,7 @@ def report(output, stats, scores, diagnostics, examples):
     Khasi primarily uses Latin letters and Bodo primarily uses Devanagari. The larger Khasi corpus
     may offer a stronger in-domain learning signal. Its biblical concentration also makes transfer
     to the contemporary official news sources uncertain.</p>
-    <section><h2>2. Method and results</h2>
+    <section class="results"><h2>2. Method and results</h2>
     <p>MADLAD uses target prefixes &lt;2en&gt;, &lt;2kha&gt; and &lt;2brx&gt;. Gemma uses
     its official chat template and a translation-only instruction.
     Each model trains one epoch using BF16 and NF4 QLoRA (rank 16, alpha 32, AdamW, initial
