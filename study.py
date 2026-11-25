@@ -66,6 +66,7 @@ def encode_source(tokenizer, row, seq2seq):
 def encode_target(tokenizer, row, seq2seq):
     source_row = row
     source = encode_source(tokenizer, source_row, seq2seq)
+    source_clipped = len(source) > 256
     while len(source) > 256:
         text = source_row["source"]
         shortened = text[:max(1, int(len(text) * 224 / len(source)))]
@@ -75,9 +76,10 @@ def encode_target(tokenizer, row, seq2seq):
     end = tokenizer.eos_token_id if seq2seq else tokenizer.convert_tokens_to_ids("<end_of_turn>")
     assert end is not None and end != tokenizer.unk_token_id
     labels = reference[:255] + [end]
+    clipped = {"source_clipped": source_clipped, "target_clipped": len(reference) > 255}
     if seq2seq:
-        return {"input_ids": source, "labels": labels}
-    return {"input_ids": source + labels, "labels": [-100] * len(source) + labels}
+        return {"input_ids": source, "labels": labels} | clipped
+    return {"input_ids": source + labels, "labels": [-100] * len(source) + labels} | clipped
 
 
 def encode_all(tokenizer, rows, seq2seq):
@@ -334,14 +336,27 @@ def train(args):
     model, tokenizer = load(args, quantized=True)
     data = read_jsonl(args.data / "train.jsonl")
     validation = read_jsonl(args.data / "validation.jsonl")
+    encoded_train = encode_all(tokenizer, data, seq2seq)
+    encoded_validation = encode_all(tokenizer, validation, seq2seq)
+    token_limits = {
+        name: {key: sum(item[key] for item in encoded) for key in ("source_clipped", "target_clipped")}
+        for name, encoded in (("train", encoded_train), ("validation", encoded_validation))
+    }
     trainer = trainer_for(attach(model, args.model), tokenizer,
-                          encode_all(tokenizer, data, seq2seq),
-                          encode_all(tokenizer, validation, seq2seq), args, args.output)
+                          encoded_train, encoded_validation, args, args.output)
     result = trainer.train(resume_from_checkpoint=args.resume)
+    expected_steps = math.ceil(len(data) / (args.batch * args.accumulation))
+    assert trainer.state.global_step == expected_steps
+    assert math.isclose(trainer.state.epoch, 1.0)
+    assert trainer.state.best_model_checkpoint is not None
+    assert all(math.isfinite(item[key]) for item in trainer.state.log_history
+               for key in ("loss", "eval_loss", "train_loss", "grad_norm") if key in item)
     trainer.save_model(str(args.output / "adapter"))
     write_json(args.output / "training.json", {"metrics": result.metrics,
                 "history": trainer.state.log_history, "checkpoint": trainer.state.best_model_checkpoint,
                 "batch": args.batch, "gradient_accumulation": args.accumulation,
+                "token_limits": token_limits, "training_examples": len(data),
+                "validation_examples": len(validation), "optimizer_steps": expected_steps,
                 "gradient_checkpointing": args.gradient_checkpointing})
 
 

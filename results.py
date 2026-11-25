@@ -304,10 +304,13 @@ def archive_results(root, archive):
             return info
 
         bundle.add(root / "results", arcname="results", filter=retain)
-        for directory in ("train", "base", "tuned", "benchmark", "smoke"):
+        for directory in ("train", "base", "tuned", "benchmark"):
             for model in MODELS:
                 name = f"{directory}/{model}"
                 bundle.add(root / name, arcname=name, filter=retain)
+        for model in MODELS:
+            file = f"smoke/{model}/smoke.json"
+            bundle.add(root / file, arcname=file)
         for name in ("eda.json", "inspection.json"):
             bundle.add(root / "data" / name, arcname=f"data-audit/{name}")
         for name in ("README.md", "requirements.txt", "prepare.py", "study.py", "results.py"):
