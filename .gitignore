@@ -2,12 +2,20 @@
 !/.gitignore
 !/README.md
 !/requirements.txt
+!/report.pdf
+!/checks.py
+!/evaluation.py
+!/fine_tuning.py
+!/model_loading.py
 !/prepare.py
-!/study.py
 !/results.py
+!/study.py
 
 !/results/
 !/results/*.json
+!/results/scores.csv
 !/results/*.pdf
 !/results/*.png
 !/results/*.svg
+!/results/history/
+!/results/history/*.json

@@ -1,5 +1,6 @@
 import argparse
 from collections import Counter
+import csv
 from html import escape
 import json
 from pathlib import Path
@@ -161,9 +162,23 @@ def aggregate(root, output):
     axes[1].legend(frameon=False)
     finish(fig, output, "improvements")
     write_json(output / "scores.json", scores)
+    write_scores_csv(output / "scores.csv", scores)
     write_json(output / "diagnostics.json", diagnostics)
     write_json(output / "examples.json", examples)
     return scores, diagnostics, examples
+
+
+def write_scores_csv(path, scores):
+    metrics = ("bleu", "chrf++")
+    stages = ("base", "tuned", "delta")
+    with path.open("w", encoding="utf-8", newline="") as file:
+        writer = csv.writer(file, lineterminator="\n")
+        writer.writerow(["model", "direction", "count"] +
+                        [f"{metric}_{stage}" for metric in metrics for stage in stages])
+        for model, score in scores.items():
+            for direction, base in score["base"].items():
+                values = [score[stage][direction][metric] for metric in metrics for stage in stages]
+                writer.writerow([model, direction, base["count"], *values])
 
 
 def curves(root, output):
@@ -267,12 +282,12 @@ def report(output, stats, scores, diagnostics, examples):
     .case {{ break-inside: avoid; }} .case p {{ margin: 2pt 0; font-size: 9pt; overflow-wrap: anywhere; }}
     </style>
     <h1>One-epoch adaptation for English–Khasi and English–Bodo translation</h1>
-    <p><b>Abstract.</b> We compare zero-shot and supervised translation with a pretrained
-    encoder–decoder and a causal language model. Both receive the same English-centric pairs
+    <p><b>Abstract.</b> I compared zero-shot and supervised translation with a pretrained
+    encoder–decoder and a causal language model. Both received the same English-centric pairs
     in both directions. {' '.join(notes)}</p>
     <h2>1. Data</h2>
     <p>The WMT26 archive supplies Khasi in Category 1 and Bodo in Category 2.
-    We excluded repeated normalized sides and overlap with the official sources before creating
+    I excluded repeated normalized sides and overlap with the official sources before creating
     deterministic validation and test holdouts. The four official lists contain 1,000 IDs each
     and have no supplied references. The internal scores estimate performance on the training
     corpus distribution. Official translations are packaged separately from this evaluation.</p>
@@ -291,9 +306,9 @@ def report(output, stats, scores, diagnostics, examples):
     <section class="results"><h2>2. Method and results</h2>
     <p>MADLAD uses target prefixes &lt;2en&gt;, &lt;2kha&gt; and &lt;2brx&gt;. Gemma uses
     its official chat template and a translation-only instruction.
-    Each model trains one epoch using BF16 and NF4 QLoRA (rank 16, alpha 32, AdamW, initial
-    learning rate 2 × 10⁻⁴, seed 42). Causal loss covers response tokens and the end-of-turn marker. We select
-    adapters by validation loss and decode both versions greedily in BF16 with a 256-token limit.
+    I trained each model for one epoch using BF16 and NF4 QLoRA (rank 16, alpha 32, AdamW, initial
+    learning rate 2 × 10⁻⁴, seed 42). Causal loss covers response tokens and the end-of-turn marker. I selected
+    adapters by validation loss and decoded both versions greedily in BF16 with a 256-token limit.
     BLEU uses 13a tokenization, and chrF++ includes word bigrams.</p>
     {score_table}
     <figure><img src="improvements.svg"><figcaption>Figure 2. Changes relative to zero-shot
@@ -354,7 +369,8 @@ def archive_results(root, archive):
             bundle.add(root / file, arcname=file)
         for name in ("eda.json", "inspection.json"):
             bundle.add(root / "data" / name, arcname=f"data-audit/{name}")
-        for name in ("README.md", "requirements.txt", "prepare.py", "study.py", "results.py"):
+        for name in ("README.md", "requirements.txt", "prepare.py", "study.py", "results.py",
+                     "model_loading.py", "fine_tuning.py", "evaluation.py", "checks.py"):
             bundle.add(Path(__file__).with_name(name), arcname=f"reproduction/{name}")
         for path in sorted(root.glob("*.log")):
             if "qwen" not in path.name:

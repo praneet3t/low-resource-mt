@@ -1,26 +1,24 @@
 # Low-resource machine translation
 
-English↔Khasi and English↔Bodo supervised adaptation on the supplied WMT26 Indic MT archive. Compare pinned MADLAD-400 3B and Gemma 3 1B instruction-tuned checkpoints. Accept the Gemma terms on Hugging Face and authenticate using `hf auth login`. MADLAD uses the Bodo tag `<2brx>`, while the source workbook uses `bodo`.
+One epoch of NF4 QLoRA on the same 70,608 directed WMT26 training examples per model, with seed 42. Evaluation uses fixed labeled holdouts. The official sets contain sources only.
+
+| Direction | MADLAD BLEU | MADLAD chrF++ | Gemma BLEU | Gemma chrF++ |
+|---|---:|---:|---:|---:|
+| English → Khasi | 3.47 → 10.88 | 22.43 → 32.15 | 0.05 → 0.36 | 5.09 → 9.17 |
+| Khasi → English | 7.65 → 18.77 | 28.02 → 38.80 | 0.70 → 0.83 | 17.17 → 14.71 |
+| English → Bodo | 0.09 → 2.01 | 1.60 → 18.21 | 0.18 → 0.04 | 1.57 → 3.83 |
+| Bodo → English | 3.72 → 8.72 | 23.75 → 29.78 | 1.16 → 2.84 | 15.15 → 18.71 |
+
+Scores are zero-shot → fine-tuned. See [report](report.pdf), [CSV](results/scores.csv), [JSON](results/scores.json), [figures](results/), and [training histories](results/history/). The [original archive](https://github.com/praneet3t/low-resource-mt/releases/download/study-v1/low-resource-mt-results.tar.gz) contains the sentence-level translations under `base/` and `tuned/`. Adapters and resumable checkpoints are also on Hugging Face for [MADLAD](https://huggingface.co/praneet3/low-resource-mt-madlad/tree/main) and [Gemma](https://huggingface.co/praneet3/low-resource-mt-gemma/tree/main).
 
 ## Reproduce
 
-Use Python 3.12, CUDA-compatible NVIDIA hardware, PyTorch 2.8.0 with CUDA 12.9, and Noto Latin and Devanagari fonts with Pango for the report.
+Use Python 3.12, a CUDA GPU, and Pango with Noto Serif and Noto Sans Devanagari. Accept the Gemma terms and sign in with `hf auth login`.
 
 ```sh
 python -m pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cu129
 python -m pip install -r requirements.txt
 python prepare.py /path/to/Low_Resource_MT_Data-20261123T221212Z-1-001.zip
-python results.py --eda-only
-
-for model in madlad gemma; do
-  python study.py smoke "$model" --output "runs/smoke/$model"
-  python study.py benchmark "$model" --output "runs/benchmark/$model"
-done
-```
-
-The A40 run uses 64-example effective training batches. Use `--resume` to continue training from the most recent checkpoint, or pass a checkpoint path. Evaluation resumes from its partial output automatically.
-
-```sh
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 for model in madlad gemma; do
   python study.py evaluate "$model" --batch 64 --output "runs/base/$model"
@@ -30,19 +28,5 @@ python study.py train gemma --batch 16 --accumulation 4 --gradient-checkpointing
 for model in madlad gemma; do
   python study.py evaluate "$model" --batch 64 --adapter "runs/train/$model/adapter" --output "runs/tuned/$model"
 done
-python results.py --archive runs/low-resource-mt-results.tar.gz
+python results.py
 ```
-
-## Protocol
-
-The archive has parallel training workbooks and source-only official test workbooks. After excluding official-source overlap and duplicate sentences, reserve 5% of surviving pairs per language for validation and another 5% for an internal test, each capped at 1,000 pairs. Matching uses NFKC, case folding, and removal of characters outside the Unicode letter, mark, and number classes. The four official source lists retain every ID in workbook order. Scores on the internal test are separate from official predictions.
-
-Train one epoch on both directions of every retained pair, with seed 42, BF16 on the A40, double-quantized NF4, AdamW, a linear learning-rate schedule starting at 2e-4, and rank-16/alpha-32 adapters on the attention query and value projections. The training and validation input and target token budgets are 256 each. Gemma uses a target-only causal loss, including its end-of-turn token. Select by lowest validation loss among quarter-epoch checkpoints including the final step.
-
-MADLAD input is `<2{target}> {source}`. Gemma uses its official chat template and a single user message. The message is `Translate the following text from {source language} to {target language}. Return only the translation.` followed by two newlines and the source. Both baseline and adapter evaluations use BF16 greedy decoding with at most 256 new tokens. Report case-sensitive corpus BLEU with 13a tokenization and chrF++ with word order 2.
-
-## Study results
-
-- [Aggregate scores](results/scores.json), [corpus statistics](results/eda.json), and [error diagnostics](results/diagnostics.json)
-- [Sentence lengths](results/lengths.pdf), [score changes](results/improvements.pdf), and [training curves](results/training.pdf)
-- [Report and complete results archive](https://github.com/praneet3t/low-resource-mt/releases/tag/study-v1)
