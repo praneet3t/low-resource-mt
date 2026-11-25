@@ -26,7 +26,7 @@ for model in madlad gemma; do
   python study.py train "$model" --batch 16 --accumulation 2 --output "runs/train/$model"
   python study.py evaluate "$model" --batch 32 --adapter "runs/train/$model/adapter" --output "runs/tuned/$model"
 done
-python results.py
+python results.py --archive runs/low-resource-mt-results.tar.gz
 ```
 
 ## Protocol

@@ -289,8 +289,11 @@ def archive_results(root, archive):
                 return None
             return info
 
-        for directory in ("results", "train", "base", "tuned", "benchmark"):
-            bundle.add(root / directory, arcname=directory, filter=retain)
+        bundle.add(root / "results", arcname="results", filter=retain)
+        for directory in ("train", "base", "tuned", "benchmark", "smoke"):
+            for model in MODELS:
+                name = f"{directory}/{model}"
+                bundle.add(root / name, arcname=name, filter=retain)
         for name in ("eda.json", "inspection.json"):
             bundle.add(root / "data" / name, arcname=f"data-audit/{name}")
         for name in ("README.md", "requirements.txt", "prepare.py", "study.py", "results.py"):

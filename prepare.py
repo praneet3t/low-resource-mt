@@ -4,6 +4,7 @@ from io import BytesIO
 import json
 from pathlib import Path
 import random
+import re
 import statistics
 import unicodedata as ud
 from zipfile import ZipFile
@@ -78,6 +79,9 @@ def summarize(pairs, language):
         "english_scripts": dict(scripts(" ".join(a for _, a, _ in pairs))),
         "target_scripts": dict(scripts(" ".join(b for _, _, b in pairs))),
         "target_without_expected_letters": sum(not scripts(b)[expected] for _, _, b in pairs),
+        "excel_escape_rows": sum(bool(re.search(r"_x[0-9a-fA-F]{4}_", a + b)) for _, a, b in pairs),
+        "archaic_english_marker_rows": sum(bool(re.search(
+            r"\b(thou|thy|thee|thine|shalt|hath)\b", a, flags=re.IGNORECASE)) for _, a, _ in pairs),
     }
 
 
@@ -122,18 +126,25 @@ def prepare(archive_path, output):
                 candidates.append((code, f"{code}:{index}", english, target))
     rng = random.Random(SEED)
     rng.shuffle(candidates)
-    seen = {normalize(row["source"]) for row in official}
+    official_keys = {normalize(row["source"]) for row in official}
+    seen = set()
+    dropped = {code: Counter() for code in LANGUAGES}
     clean = {code: [] for code in LANGUAGES}
     for code, identifier, english, target in candidates:
         keys = {normalize(english), normalize(target)}
+        if keys & official_keys:
+            dropped[code]["official_source_overlap"] += 1
+            continue
         if keys & seen:
+            dropped[code]["repeated_normalized_side"] += 1
             continue
         seen.update(keys)
         clean[code].append((identifier, english, target))
     splits = {name: [] for name in ("train", "validation", "test")}
     for code, pairs in clean.items():
         holdout = min(1000, len(pairs) // 20)
-        stats[code]["excluded_for_overlap"] = stats[code]["usable_rows"] - len(pairs)
+        stats[code]["exclusions"] = dict(dropped[code])
+        stats[code]["excluded_for_overlap"] = dropped[code].total()
         for name, group in zip(splits, (pairs[2 * holdout:], pairs[:holdout], pairs[holdout:2 * holdout])):
             stats[code][name + "_pairs"] = len(group)
             for identifier, english, target in group:
