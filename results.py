@@ -7,6 +7,7 @@ import tarfile
 import unicodedata as ud
 
 import matplotlib
+from statistics import mean
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pymupdf
@@ -179,6 +180,18 @@ def report(output, stats, scores, diagnostics, examples):
         notes.append(f"{title}: the largest chrF++ change was {scores[model]['delta'][largest]['chrf++']:+.2f} "
                      f"for {DIRECTIONS[largest]}. The smallest was "
                      f"{scores[model]['delta'][smallest]['chrf++']:+.2f} for {DIRECTIONS[smallest]}.")
+    differences = []
+    for model, title in MODELS.items():
+        score = scores[model]["tuned"]
+        language_gap = mean(score[d]["chrf++"] for d in ("en-kha", "kha-en")) - mean(
+            score[d]["chrf++"] for d in ("en-brx", "brx-en"))
+        direction_gap = mean(score[d]["chrf++"] for d in ("kha-en", "brx-en")) - mean(
+            score[d]["chrf++"] for d in ("en-kha", "en-brx"))
+        differences.append(f"{title} had a Khasi-minus-Bodo gap of {language_gap:+.2f} chrF++ "
+                           f"and an into-English-minus-out-of-English gap of {direction_gap:+.2f}.")
+    head_to_head = sum(scores["madlad"]["tuned"][d]["chrf++"] > scores["gemma"]["tuned"][d]["chrf++"]
+                       for d in DIRECTIONS)
+    comparison = f"Tuned MADLAD had higher chrF++ than tuned Gemma in {head_to_head} of four directions."
     diagnostic_rows = []
     for model, title in MODELS.items():
         for direction, label in DIRECTIONS.items():
@@ -228,7 +241,7 @@ def report(output, stats, scores, diagnostics, examples):
     We excluded repeated normalized sides and overlap with the official sources before creating
     deterministic validation and test holdouts. The four official lists contain 1,000 IDs each
     and have no supplied references. The internal scores estimate performance on the training
-    corpus distribution. Official translations are released separately from this evaluation.</p>
+    corpus distribution. Official translations are packaged separately from this evaluation.</p>
     {data_table}
     <figure><img src="lengths.svg"><figcaption>Figure 1. Empirical whitespace-token length
     distributions. The horizontal axis displays lengths up to 100 tokens.</figcaption></figure>
@@ -238,8 +251,9 @@ def report(output, stats, scores, diagnostics, examples):
     English-to-Khasi length ratios outside [0.33, 3] and two extreme inspected rows appeared to pair
     verse text with a heading or larger passage. Bodo had 2,451 normalized duplicate pairs and
     at least one sampled English row contained an escaped spreadsheet character.
-    Khasi primarily uses Latin letters and Bodo primarily uses Devanagari. The official English
-    sources include contemporary news, suggesting domain shift for Khasi.</p>
+    Khasi primarily uses Latin letters and Bodo primarily uses Devanagari. The larger Khasi corpus
+    may offer a stronger in-domain learning signal. Its biblical concentration also makes transfer
+    to the contemporary official news sources uncertain.</p>
     <section><h2>2. Method and results</h2>
     <p>MADLAD uses target prefixes &lt;2en&gt;, &lt;2kha&gt; and &lt;2brx&gt;. Gemma uses
     its official chat template and a translation-only instruction.
@@ -252,9 +266,9 @@ def report(output, stats, scores, diagnostics, examples):
     performance on identical internal test examples.</figcaption></figure>
     <figure><img src="training.svg"><figcaption>Figure 3. Training logs and held-out
     validation loss. Training and validation series are sampled at different intervals.</figcaption></figure>
-    <p>Khasi provides twice as many training pairs, but distinct domains, scripts, pretraining
-    coverage, model sizes and tokenizers also affect results. This two-checkpoint comparison
-    cannot isolate the effects of architecture or resource level. Results use one random seed.</p></section>
+    <p>{comparison} {' '.join(differences)} These are unweighted averages over directions.
+    Domains, scripts, pretraining coverage, model sizes and tokenizers differ across the study.
+    Results use one seed and support a descriptive comparison.</p></section>
     <section><h2>3. Translation errors</h2>
     <p>The table counts automatic flags. A short output has fewer than half the reference's
     whitespace tokens. Repetition means the same trigram occurs at least three times. The script
