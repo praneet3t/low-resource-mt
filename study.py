@@ -128,7 +128,8 @@ def metrics(rows):
 
 @torch.inference_mode()
 def generate(model, tokenizer, rows, seq2seq, batch_size, max_tokens):
-    encoded = [encode_source(tokenizer, row, seq2seq) for row in rows]
+    with ThreadPoolExecutor(max_workers=8) as workers:
+        encoded = list(workers.map(lambda row: encode_source(tokenizer, row, seq2seq), rows))
     order = sorted(range(len(rows)), key=lambda i: len(encoded[i]))
     for start in range(0, len(order), batch_size):
         indices = order[start:start + batch_size]
@@ -144,7 +145,11 @@ def generate(model, tokenizer, rows, seq2seq, batch_size, max_tokens):
 
 def output_rows(model, tokenizer, rows, args, file):
     signature = hashlib.sha256(json.dumps(rows, ensure_ascii=False).encode()).hexdigest()
-    settings = {"model": MODELS[args.model], "adapter": str(args.adapter),
+    adapter_hash = None
+    if args.adapter:
+        with (args.adapter / "adapter_model.safetensors").open("rb") as handle:
+            adapter_hash = hashlib.file_digest(handle, "sha256").hexdigest()
+    settings = {"model": MODELS[args.model], "adapter_sha256": adapter_hash, "batch": args.batch,
                 "max_new_tokens": args.max_tokens, "rows_sha256": signature}
     metadata = file.with_suffix(".settings.json")
     settings = json.loads(json.dumps(settings))
