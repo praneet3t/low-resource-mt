@@ -331,6 +331,26 @@ def benchmark(args):
     write_json(args.output / "inference-benchmark.json", timing)
 
 
+def resume_checkpoint(output, request):
+    if not request:
+        return None
+    required = ("adapter_config.json", "adapter_model.safetensors", "trainer_state.json",
+                "optimizer.pt", "scheduler.pt", "rng_state.pth")
+    if request is True:
+        paths = [path for path in output.glob("checkpoint-*") if path.name[11:].isdigit()]
+        paths.sort(key=lambda path: int(path.name[11:]), reverse=True)
+    else:
+        paths = [Path(request)]
+    for path in paths:
+        if all((path / name).is_file() and (path / name).stat().st_size for name in required):
+            try:
+                json.loads((path / "trainer_state.json").read_text())
+            except json.JSONDecodeError:
+                continue
+            return str(path)
+    raise FileNotFoundError(f"No complete checkpoint for {request!r} in {output}")
+
+
 def train(args):
     seq2seq = args.model == "madlad"
     model, tokenizer = load(args, quantized=True)
@@ -344,7 +364,7 @@ def train(args):
     }
     trainer = trainer_for(attach(model, args.model), tokenizer,
                           encoded_train, encoded_validation, args, args.output)
-    result = trainer.train(resume_from_checkpoint=args.resume)
+    result = trainer.train(resume_from_checkpoint=resume_checkpoint(args.output, args.resume))
     expected_steps = math.ceil(len(data) / (args.batch * args.accumulation))
     assert trainer.state.global_step == expected_steps
     assert math.isclose(trainer.state.epoch, 1.0)
