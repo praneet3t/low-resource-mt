@@ -18,3 +18,7 @@
 !/results/training/*.json
 !/results/diagnostics/
 !/results/diagnostics/*.json
+!/results/translations/
+!/results/translations/*/
+!/results/translations/*/*/
+!/results/translations/*/*/*.json

@@ -19,6 +19,7 @@ MODELS = ("madlad", "gemma")
 CPU = ("numpy==2.2.6", "sacrebleu==2.6.0", "openpyxl==3.1.5", "pymupdf==1.27.1")
 ARCHIVE = "low-resource-mt-results.tar.gz"
 PILOT_ARCHIVE = "decoding-pilot-translations.tar.gz"
+TRANSLATIONS = ROOT / "results/translations"
 
 
 def run(module, *args, env=None):
@@ -93,16 +94,41 @@ def pilot_metrics(path):
     return [records[f"{name}.json"] | {"scores": metrics(records[f"{name}.translations.json"])} for name in names]
 
 
+def with_references(path, references, *, subset=False):
+    rows = json.loads(path.read_text(encoding="utf-8"))
+    keys = [(row["direction"], row["id"]) for row in rows]
+    if not keys or len(set(keys)) != len(keys) or not set(keys) <= references.keys():
+        raise ValueError(f"Missing, duplicate or unknown prediction identifiers in {path}")
+    if not subset and len(keys) != len(references):
+        raise ValueError(f"Incomplete holdout predictions in {path}")
+    return [row | references[key] for key, row in zip(keys, rows, strict=True)]
+
+
 def cpu_evaluate(args):
     require(("sacrebleu==2.6.0", "numpy", "openpyxl"))
     from .holdout_analysis import evaluate_predictions
     from .metrics import metrics
-    from .prepare import write_json
+    from .prepare import read_jsonl, write_json
 
-    archive = release_archive(args.archive, args.runs, ARCHIVE)
-    members = {f"{stage}/{model}/test.json": (stage, model)
-               for stage in ("base", "tuned") for model in MODELS}
-    predictions = {members[name]: data for name, data in json_members(archive, members).items()}
+    archive, archived = None, None
+    prepared = (args.data or args.runs / "data") / "test.jsonl"
+    if not args.archive and (args.data or prepared.is_file()):
+        reference_rows = read_jsonl(prepared)
+    else:
+        archive = release_archive(args.archive, args.runs, ARCHIVE)
+        members = {f"{stage}/{model}/test.json": (stage, model)
+                   for stage in ("base", "tuned") for model in MODELS}
+        archived = {members[name]: data for name, data in json_members(archive, members).items()}
+        reference_rows = archived["base", "madlad"]
+    references = {(r["direction"], r["id"]): {field: r[field] for field in ("source", "reference")}
+                  for r in reference_rows}
+    if len(references) != len(reference_rows):
+        raise ValueError("Duplicate identifiers in the labeled holdout")
+    if args.archive:
+        predictions = archived
+    else:
+        predictions = {(stage, model): with_references(TRANSLATIONS / model / condition / "holdout.json", references)
+                       for stage, condition in (("base", "pretrained"), ("tuned", "fine-tuned")) for model in MODELS}
     scores = {model: {stage: metrics(predictions[stage, model]) for stage in ("base", "tuned")}
               for model in MODELS}
     for score in scores.values():
@@ -112,10 +138,20 @@ def cpu_evaluate(args):
     write_json(args.output / "scores.json", scores)
     write_json(args.output / "additional-evaluation.json",
                evaluate_predictions(predictions, 2000, 42, args.workers))
-    pilots = release_archive(args.pilot_archive, args.runs, PILOT_ARCHIVE)
-    write_json(args.output / "additional-decoding.json", pilot_metrics(pilots))
+    if args.pilot_archive:
+        pilots = pilot_metrics(args.pilot_archive)
+    elif args.archive:
+        pilots = pilot_metrics(release_archive(None, args.runs, PILOT_ARCHIVE))
+    else:
+        recorded = json.loads((ROOT / "results/metrics/additional-decoding.json").read_text(encoding="utf-8"))
+        pilots = []
+        for row in recorded:
+            folder = "beam-search" if row["model"] == "madlad" else "few-shot"
+            path = TRANSLATIONS / row["model"] / folder / f"{row['label']}.json"
+            pilots.append(row | {"scores": metrics(with_references(path, references, subset=True))})
+    write_json(args.output / "additional-decoding.json", pilots)
     semantic = ROOT / "results/metrics/semantic-evaluation.json"
-    if semantic.is_file():
+    if archive and predictions == archived and semantic.is_file():
         with archive.open("rb") as stream:
             digest = file_digest(stream, "sha256").hexdigest()
         if json.loads(semantic.read_text(encoding="utf-8"))["archive_sha256"] == digest:
@@ -216,6 +252,8 @@ def main(argv=None):
         if name == "cpu-eval":
             p.add_argument("--workers", type=int, default=2)
             p.add_argument("--pilot-archive", type=lambda value: Path(value).resolve())
+            p.add_argument("--data", type=lambda value: Path(value).resolve(),
+                           help="Use the prepared test.jsonl for references without downloading the archive.")
         if name == "gpu":
             p.add_argument("--dataset", type=lambda value: Path(value).resolve(), required=True)
             p.add_argument("--models", type=lambda value: Path(value).resolve())
@@ -246,6 +284,8 @@ def main(argv=None):
     elif args.command == "cpu-eval":
         if args.workers < 1:
             parser.error("--workers must be positive")
+        if args.data and args.archive:
+            parser.error("Choose --data or --archive.")
         args.output = args.output or args.runs / "cpu-metrics"
         cpu_evaluate(args)
     else:

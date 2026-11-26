@@ -17,6 +17,21 @@ Scores are pretrained → fine-tuned on the fixed labeled holdouts. Official inp
 - [Translations, adapters and training checkpoints](https://github.com/praneet3t/low-resource-mt/releases/download/study-v1/low-resource-mt-results.tar.gz) · [Exploratory pilot translations](https://github.com/praneet3t/low-resource-mt/releases/download/study-v1/decoding-pilot-translations.tar.gz)
 - Authorized Hugging Face mirrors for [MADLAD](https://huggingface.co/praneet3/low-resource-mt-madlad/tree/main) and [Gemma](https://huggingface.co/praneet3/low-resource-mt-gemma/tree/main).
 
+## Translation files
+
+| System | Labeled holdout (3,274 per system) | Official test (4,000 per system) |
+|---|---|---|
+| MADLAD pretrained | [JSON](results/translations/madlad/pretrained/holdout.json) | [JSON](results/translations/madlad/pretrained/official.json) |
+| MADLAD fine-tuned | [JSON](results/translations/madlad/fine-tuned/holdout.json) | [JSON](results/translations/madlad/fine-tuned/official.json) |
+| Gemma pretrained | [JSON](results/translations/gemma/pretrained/holdout.json) | [JSON](results/translations/gemma/pretrained/official.json) |
+| Gemma fine-tuned | [JSON](results/translations/gemma/fine-tuned/holdout.json) | [JSON](results/translations/gemma/fine-tuned/official.json) |
+
+- MADLAD beam pilots at [1](results/translations/madlad/beam-search/beam-1.json), [5](results/translations/madlad/beam-search/beam-5.json), [10](results/translations/madlad/beam-search/beam-10.json), [20](results/translations/madlad/beam-search/beam-20.json).
+- Gemma prompt pilots include [zero-shot](results/translations/gemma/few-shot/none-0.json), random [1](results/translations/gemma/few-shot/random-1.json), [3](results/translations/gemma/few-shot/random-3.json), [5](results/translations/gemma/few-shot/random-5.json), and lexical [1](results/translations/gemma/few-shot/lexical-1.json), [3](results/translations/gemma/few-shot/lexical-3.json), [5](results/translations/gemma/few-shot/lexical-5.json). Each pilot has 48 predictions.
+- [EDA sample lengths](results/diagnostics/inspection.json) cover the eight inspected pairs per language.
+
+The prediction files retain generated text, identifiers and ordering. Supplied source and reference fields are omitted because redistribution terms could not be confirmed. [WMT task data](https://www2.statmt.org/wmt26/indic-mt-task.html)
+
 ## Reproduce
 
 Use Python 3.12 from the repository root, preferably in a virtual environment. The CPU commands work on Linux and Windows with GitHub CLI authenticated, or accept `--archive` for a downloaded archive. PDF rendering requires Chrome, Chromium or Edge and Noto Serif plus a Devanagari font. The report command writes `runs/report.pdf`.
@@ -29,6 +44,6 @@ Use Python 3.12 from the repository root, preferably in a virtual environment. T
 | CUDA environment | `python -m src.reproduce setup --with-gpu` |
 | Full study, including training | `python -m src.reproduce gpu --dataset /path/to/data.zip` |
 
-Saved-prediction evaluation recomputes BLEU, chrF++, TER and paired intervals. It reuses BERTScore only when the archive hash matches. For a separate semantic environment, use `python -m src.reproduce setup --with-semantic`. Use `python -m src.semantic_evaluation --archive runs/low-resource-mt-results.tar.gz` for an explicit CPU BERTScore rerun. Its dependency versions are recorded in the metrics JSON.
+Saved-prediction evaluation reads the checked-in translations and joins them to references by direction and ID. It uses `runs/data/test.jsonl` if prepared data exist, or obtains the references from the release archive. Use `--data` to choose another prepared data directory or `--archive` to score that archive's predictions directly. It reuses BERTScore only with matching predictions and archive hash. For an explicit CPU BERTScore rerun, use `python -m src.reproduce setup --with-semantic` in a separate environment, then `python -m src.semantic_evaluation --archive runs/low-resource-mt-results.tar.gz`.
 
 The GPU workflow requires the original task ZIP and authenticated Gemma access, or local snapshots supplied with `--models`. It reuses completed stages and resumes from a complete checkpoint. Use `gpu --help` for dataset, checkpoint, batch, accumulation and output controls. Use `--dry-run` to inspect a workflow without starting it. [Task data](https://www2.statmt.org/wmt26/indic-mt-task.html) · [Gemma terms](https://huggingface.co/google/gemma-3-1b-it)
