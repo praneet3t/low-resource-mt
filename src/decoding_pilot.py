@@ -8,9 +8,9 @@ import time
 
 import torch
 
-from evaluation import metrics
-from model_loading import NAMES, encode_source, load
-from prepare import normalize, read_jsonl, write_json
+from .evaluation import metrics
+from .model_loading import NAMES, encode_source, load
+from .prepare import normalize, read_jsonl, write_json
 
 
 def terms(text):

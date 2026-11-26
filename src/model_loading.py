@@ -3,7 +3,7 @@ import torch
 from peft import LoraConfig, get_peft_model
 from transformers import AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoTokenizer, BitsAndBytesConfig
 
-from prepare import LANGUAGES
+from .prepare import LANGUAGES
 
 
 MODELS = {

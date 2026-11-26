@@ -7,10 +7,10 @@ import time
 from peft import PeftModel
 import torch
 
-from evaluation import generate, metrics
-from fine_tuning import collate, encode_all, trainer_for
-from model_loading import attach, load
-from prepare import SEED, read_jsonl, write_json
+from .evaluation import generate, metrics
+from .fine_tuning import collate, encode_all, trainer_for
+from .model_loading import attach, load
+from .prepare import SEED, read_jsonl, write_json
 
 
 def sample_directions(rows, count):

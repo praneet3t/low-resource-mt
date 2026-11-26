@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Machine Translation with Pretrained Models</title>
+<style>
+  @page { size: A4; margin: 19mm 21mm 18mm;
+    @bottom-center { content: counter(page); font: 9pt "Noto Serif", Georgia, serif; color: #444; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 11pt/1.43 "Noto Serif", Georgia, serif; color: #181818; }
+  section + section { break-before: page; }
+  h1 { font-size: 20pt; line-height: 1.18; font-weight: 700; margin: 0 0 16pt; }
+  h2 { font-size: 15pt; line-height: 1.24; margin: 0 0 11pt; }
+  h3 { font-size: 11pt; line-height: 1.3; margin: 13pt 0 4pt; }
+  p { margin: 0 0 8pt; orphans: 2; widows: 2; }
+  .abstract { margin-bottom: 20pt; }
+  a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+  code { font-size: .88em; }
+  table { width: 100%; border-collapse: collapse; margin: 10pt 0 12pt;
+    border-bottom: .75pt solid #555; font-size: 9pt; font-variant-numeric: tabular-nums; }
+  caption, figcaption { font-size: 9.25pt; line-height: 1.36; text-align: left; }
+  caption { margin-bottom: 5pt; }
+  thead { border-top: .75pt solid #555; border-bottom: .55pt solid #777; }
+  th, td { padding: 4pt 5pt; text-align: right; }
+  th:first-child { text-align: left; }
+  tbody th { font-weight: 400; }
+  tbody tr + tr { border-top: .35pt solid #d1d1d1; }
+  .scores th, .scores td { padding: 3pt 4pt; white-space: nowrap; }
+  .scores .systems th { text-align: center; }
+  .scores .systems th:first-child { text-align: left; }
+  .scores thead tr:nth-child(2) th { text-align: right; }
+  .scores th[scope="colgroup"] { border-bottom: .45pt solid #999; }
+  .settings th, .settings td { text-align: left; padding: 3pt 5pt; }
+  figure { margin: 10pt 0 11pt; break-inside: avoid; }
+  figure img { width: 100%; display: block; margin: 0 auto 4pt; }
+  .curves img { width: 89%; }
+  .deltas img { width: 89%; }
+  .analysis p { margin-bottom: 7pt; }
+  .analysis figure { margin-block: 6pt; }
+  dl { display: grid; grid-template-columns: 64pt 1fr; column-gap: 8pt; row-gap: 2pt;
+    font-size: 10.5pt; line-height: 1.42; margin: 5pt 0 7pt; break-inside: avoid; }
+  dt { font-weight: 600; }
+  dd { margin: 0; white-space: pre-wrap; }
+  [lang="brx"] { font-family: "Noto Serif", Georgia, "Noto Sans Devanagari", "Nirmala UI", serif; }
+  .refs { list-style: none; padding: 0; margin: 0; font-size: 9pt; line-height: 1.37; }
+  .refs li { margin-bottom: 1.2pt; padding-left: 17pt; text-indent: -17pt; }
+</style>
+
+<section>
+  <h1>Machine Translation with Pretrained Models</h1>
+  <p class="abstract"><strong>Abstract.</strong> We compare zero-shot translation with one epoch of QLoRA adaptation for MADLAD-400 3B and Gemma 3 1B on English↔Khasi and English↔Bodo. MADLAD improves in both BLEU and chrF++ across all four directions. Gemma shows mixed gains. Its English→Bodo outputs increasingly use Devanagari, but also repeat more often and require substantially more edits.</p>
+
+  <h2>1. Introduction and dataset</h2>
+  <p>We ask how the two pretrained models respond to the same low-resource supervision, and whether improvements in corpus scores coincide with better translation behavior. The WMT26 Indic translation task places Khasi and Bodo in different resource categories [1]. Using both directions for each language lets us examine whether adaptation helps when generating the lower-resource language as well as when translating into English.</p>
+
+  <table>
+    <caption><strong>Table 1.</strong> Parallel pairs before and after screening, with median and 95th-percentile whitespace-token lengths before screening.</caption>
+    <thead><tr><th scope="col">Language (category)</th><th scope="col">Usable</th><th scope="col">Train</th><th scope="col">Val.</th><th scope="col">Test</th><th scope="col">English</th><th scope="col">Target</th></tr></thead>
+    <tbody>$corpus_rows</tbody>
+  </table>
+  <figure>
+    <img src="lengths.svg" alt="Cumulative English and target sentence lengths for Khasi and Bodo">
+    <figcaption><strong>Figure 1.</strong> Cumulative length distributions for the two sides of the input corpora. Khasi sentences are typically longer than their English counterparts. Bodo sentences are slightly shorter at the median.</figcaption>
+  </figure>
+
+  <p>Khasi has roughly twice as many training pairs and longer sentences (Table 1, Figure 1). Eight inspected pairs per language suggested a predominantly biblical Khasi sample, including apparent verse-to-heading or verse-to-passage alignments. The Bodo sample included history, everyday language and news. Archaic English forms such as <em>thou</em> or <em>hath</em> occurred in $archaic English rows paired with Khasi.</p>
+  <p>Khasi text uses the Latin script. The Bodo corpus is predominantly Devanagari and contained $duplicates duplicate pairs after normalization and $escapes rows with spreadsheet escape patterns. Corpus size, register, alignment and script differ together, which limits what this comparison can establish about resource level alone.</p>
+</section>
+
+<section>
+  <h2>2. Experimental methodology</h2>
+  <p>After seed-42 shuffling, we screened for exact matches between normalized parallel sides and official inputs, then removed later pairs that repeated a previously kept side. Each language contributed equal-sized validation and test splits, each capped at 1,000 pairs. Both directions of each pair stayed in the same split, yielding $train_count directed training examples per model.</p>
+
+  <figure>
+    <img src="architectures.svg" alt="Encoder-decoder training in MADLAD and target-masked causal training in Gemma">
+    <figcaption><strong>Figure 2.</strong> Training computation. The pretrained parameters stay frozen, with eligible linear weights stored in double-quantized NF4. LoRA updates the query and value projections, including MADLAD decoder cross-attention. Both losses supervise the target and its termination token.</figcaption>
+  </figure>
+
+  <p>MADLAD [2] prepends <code>&lt;2en&gt;</code>, <code>&lt;2kha&gt;</code> or <code>&lt;2brx&gt;</code> to the source. Its decoder attends to encoder states and consumes shifted target tokens in training. Gemma [3] receives a chat-templated instruction to translate between the named languages and return only the translation, followed by the source. Its target follows the prompt in the causal sequence. Instruction and source labels are masked.</p>
+
+  <table class="settings">
+    <caption><strong>Table 2.</strong> QLoRA [4] hyperparameters. Both runs used gradient checkpointing and an effective batch size of 64.</caption>
+    <thead><tr><th scope="col">Setting</th><th scope="col">MADLAD-400 3B</th><th scope="col">Gemma 3 1B</th></tr></thead>
+    <tbody>
+      <tr><th scope="row">Epochs / seed</th><td>1 / 42</td><td>1 / 42</td></tr>
+      <tr><th scope="row">Learning rate / optimizer</th><td>2 × 10⁻⁴ / AdamW</td><td>2 × 10⁻⁴ / AdamW</td></tr>
+      <tr><th scope="row">LoRA rank / scale α / dropout</th><td>16 / 32 / 0</td><td>16 / 32 / 0</td></tr>
+      <tr><th scope="row">Microbatch / accumulation</th><td>32 / 2</td><td>16 / 4</td></tr>
+      <tr><th scope="row">Quantization / compute</th><td>NF4 / BF16</td><td>NF4 / BF16</td></tr>
+    </tbody>
+  </table>
+
+  <p>Training capped the encoded input prompt or source and the target segment at 256 tokens each. Both runs selected the final checkpoint by validation loss, evaluated at quarter-epoch intervals. All four systems used greedy BF16 decoding with a cap of 256 new tokens. The labeled holdout supports case-sensitive SacreBLEU 13a and chrF++ with word bigrams [5, 6]. The $official_count official inputs supplied with the task data have no references, so we saved their predictions separately and report scores only for the labeled holdout.</p>
+</section>
+
+<section class="analysis">
+  <h2>3. Results and discussion</h2>
+  <table class="scores">
+    <caption><strong>Table 3.</strong> Pretrained → fine-tuned corpus scores on the labeled holdout. <em>n</em> is the number of sentence pairs per direction.</caption>
+    <thead>
+      <tr class="systems"><th rowspan="2" scope="col">Direction</th><th rowspan="2" scope="col"><em>n</em></th><th colspan="2" scope="colgroup">MADLAD-400 3B</th><th colspan="2" scope="colgroup">Gemma 3 1B</th></tr>
+      <tr><th scope="col">BLEU</th><th scope="col">chrF++</th><th scope="col">BLEU</th><th scope="col">chrF++</th></tr>
+    </thead>
+    <tbody>$score_rows</tbody>
+  </table>
+
+  <p>Tuned MADLAD leads in all four directions (Table 3). Into Bodo it gains $shift chrF++ points while BLEU stays near 2, consistent with more character overlap and few exact word sequences. Gemma loses chrF++ from Khasi to English and BLEU into Bodo (Figure 3). Size, pretraining and input format confound the architecture comparison. Both runs lowered validation loss (Figure 4).</p>
+  <figure class="deltas">
+    <img src="improvements.svg" alt="Changes in BLEU and chrF++ for both models across four directions">
+    <figcaption><strong>Figure 3.</strong> Fine-tuned minus pretrained scores in points on the labeled holdout.</figcaption>
+  </figure>
+  <figure class="curves">
+    <img src="training.svg" alt="Training and validation cross-entropy over one epoch for each model">
+    <figcaption><strong>Figure 4.</strong> Training and validation cross-entropy. The objectives and tokenizers differ, so absolute loss values are specific to each model.</figcaption>
+  </figure>
+
+  <p>From $resamples paired sentence resamples [7], Gemma’s 95% chrF++ change intervals were $bodo_ci into Bodo and $khasi_ci from Khasi into English. These intervals reflect holdout sampling. Into Bodo, translation edit rate (TER [8]) worsened despite the chrF++ gain (Section 4).</p>
+  <p>A separate pretrained pilot used $pilot_n examples per direction and a $pilot_cap-token cap. Gemma’s 1-, 3- and 5-shot prompts reached $lexical mean chrF++ with inverse-frequency-weighted source overlap, $random with random same-direction examples and $zero_shot zero-shot. MADLAD beam 20 scored $beam_20 versus $beam_1 for greedy decoding ($beam_seconds_20 vs. $beam_seconds_1 s). Means weight directions equally.</p>
+</section>
+
+<section>
+  <h2>4. Error analysis and conclusion</h2>
+  <p>For Gemma into Bodo, outputs flagged for the wrong majority script fell ($wrong_script out of $bodo_n), while repeated-trigram flags rose ($repetition). The chrF++ increase ($bodo_chrf) coincided with a much higher TER ($bodo_ter). An output can acquire the expected script and match more reference fragments while repeating enough material to require many more edits.</p>
+
+  <h3>MADLAD · English → Bodo</h3>
+  <dl>$madlad_example</dl>
+  <p>The baseline copies the source verbatim. After adaptation, the output uses Devanagari and retains recognizable forms of the name and sport. The wording diverges from the reference beyond those terms, so script and name retention are limited evidence of adequacy.</p>
+
+  <h3>Gemma · Khasi → English</h3>
+  <dl>$gemma_example</dl>
+  <p>Adaptation recovers the name and clock time, but omits coming home and changes the relationship between the subject and time. This illustrates why retaining individual details can coexist with a lower translation score across the direction.</p>
+
+  <h3>Limitations and conclusion</h3>
+  <p>The labeled sentences come from the same corpus as training, with one reference per source. Near duplicates and pretraining overlap were unmeasured. One seed, two languages and the absence of bilingual adequacy judgments limit generalization. MADLAD improved consistently under this setup. The mixed Gemma outcomes show why script checks, repetition diagnostics, edit rate and example inspection matter alongside overlap scores.</p>
+
+  <h3>References</h3>
+  <ol class="refs">
+    <li>[1] Pakray et al. (2026). <a href="https://doi.org/10.18653/2026.wmt-main.53">Findings of WMT 2026 Shared Task on Low-resource Indic Languages Translation</a>.</li>
+    <li>[2] Kudugunta et al. (2023). <a href="https://arxiv.org/abs/2309.04662">MADLAD-400: A Multilingual and Document-Level Large Audited Dataset</a>.</li>
+    <li>[3] Gemma Team (2025). <a href="https://arxiv.org/abs/2503.19786">Gemma 3 Technical Report</a>.</li>
+    <li>[4] Dettmers et al. (2023). <a href="https://arxiv.org/abs/2305.14314">QLoRA: Efficient Finetuning of Quantized LLMs</a>.</li>
+    <li>[5] Post (2018). <a href="https://aclanthology.org/W18-6319/">A Call for Clarity in Reporting BLEU Scores</a>.</li>
+    <li>[6] Popović (2017). <a href="https://aclanthology.org/W17-4770/">chrF++: Words Helping Character N-grams</a>.</li>
+    <li>[7] Koehn (2004). <a href="https://aclanthology.org/W04-3250/">Statistical Significance Tests for Machine Translation Evaluation</a>.</li>
+    <li>[8] Snover et al. (2006). <a href="https://aclanthology.org/2006.amta-papers.25/">A Study of Translation Edit Rate with Targeted Human Annotation</a>.</li>
+  </ol>
+</section>
+</html>

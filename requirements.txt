@@ -7,6 +7,5 @@ openpyxl==3.1.5
 sacrebleu==2.6.0
 matplotlib==3.10.8
 huggingface-hub==0.36.2
-weasyprint==67.0
 pymupdf==1.27.1
 numpy==2.5.4

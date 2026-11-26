@@ -8,8 +8,8 @@ from peft import PeftModel
 from sacrebleu.metrics import BLEU, CHRF
 import torch
 
-from model_loading import MODELS, encode_source, load
-from prepare import read_jsonl, write_json
+from .model_loading import MODELS, encode_source, load
+from .prepare import read_jsonl, write_json
 
 
 def metrics(rows):

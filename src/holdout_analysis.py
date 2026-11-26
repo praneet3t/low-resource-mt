@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 from sacrebleu.metrics import CHRF, TER
 
-from prepare import write_json
+from .prepare import write_json
 
 
 def analyze(job):

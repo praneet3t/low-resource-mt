@@ -4,11 +4,11 @@ from pathlib import Path
 import torch
 from transformers import set_seed
 
-from checks import benchmark, smoke
-from evaluation import evaluate
-from fine_tuning import train
-from model_loading import MODELS
-from prepare import SEED
+from .checks import benchmark, smoke
+from .evaluation import evaluate
+from .fine_tuning import train
+from .model_loading import MODELS
+from .prepare import SEED
 
 
 if __name__ == "__main__":

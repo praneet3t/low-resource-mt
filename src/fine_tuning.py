@@ -6,8 +6,8 @@ from pathlib import Path
 import torch
 from transformers import Seq2SeqTrainer, Seq2SeqTrainingArguments, TrainerCallback
 
-from model_loading import attach, encode_source, load
-from prepare import SEED, read_jsonl, write_json
+from .model_loading import attach, encode_source, load
+from .prepare import SEED, read_jsonl, write_json
 
 
 def encode_target(tokenizer, row, seq2seq):
