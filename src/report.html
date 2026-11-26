@@ -37,12 +37,13 @@
   .analysis p { margin-bottom: 7pt; }
   .analysis figure { margin-block: 6pt; }
   .analysis.semantic { font-size: 10.5pt; line-height: 1.37; }
-  .semantic .deltas img, .semantic .curves img { width: 85%; }
+  .semantic .deltas img, .semantic .curves img { width: 82%; }
   .conclusion.semantic p { margin-bottom: 6pt; line-height: 1.37; }
   .conclusion.semantic h3 { margin-top: 10pt; }
   .semantic-scores { margin: 7pt 0; }
   .semantic-scores th, .semantic-scores td { padding: 2pt 4pt; }
-  .semantic-scores small { font-size: 8.25pt; }
+  .semantic-scores th[rowspan]:nth-child(2), .semantic-scores td:nth-child(2) { text-align: left; }
+  .semantic-scores th[scope="colgroup"] { text-align: center; border-bottom: .5pt solid #777; }
   dl { display: grid; grid-template-columns: 64pt 1fr; column-gap: 8pt; row-gap: 2pt;
     font-size: 10.5pt; line-height: 1.42; margin: 5pt 0 7pt; break-inside: avoid; }
   dt { font-weight: 600; }

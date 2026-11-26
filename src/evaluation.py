@@ -5,28 +5,11 @@ import os
 import time
 
 from peft import PeftModel
-from sacrebleu.metrics import BLEU, CHRF
 import torch
 
+from .metrics import metrics
 from .model_loading import MODELS, encode_source, load
 from .prepare import read_jsonl, write_json
-
-
-def metrics(rows):
-    scores = {}
-    for direction in sorted({row["direction"] for row in rows}):
-        group = [row for row in rows if row["direction"] == direction]
-        predictions = [row["translation"] for row in group]
-        references = [[row["reference"] for row in group]]
-        bleu, chrf = BLEU(tokenize="13a"), CHRF(word_order=2)
-        scores[direction] = {
-            "count": len(group),
-            "bleu": bleu.corpus_score(predictions, references).score,
-            "chrf++": chrf.corpus_score(predictions, references).score,
-            "bleu_signature": str(bleu.get_signature()),
-            "chrf++_signature": str(chrf.get_signature()),
-        }
-    return scores
 
 
 def decode_batch(model, tokenizer, sequences, seq2seq, max_tokens):

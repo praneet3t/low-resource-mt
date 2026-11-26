@@ -34,11 +34,10 @@ def analyze(job):
             "ter_signature": str(ter.get_signature())}
 
 
-def evaluate(root, resamples, seed):
+def evaluate_predictions(predictions, resamples, seed, workers=2):
     jobs = []
     for model in ("madlad", "gemma"):
-        paths = [root / stage / model / "test.json" for stage in ("base", "tuned")]
-        base, tuned = [json.loads(path.read_text(encoding="utf-8")) for path in paths]
+        base, tuned = [predictions[stage, model] for stage in ("base", "tuned")]
 
         def identity(row):
             return row["id"], row["direction"], row["source"], row["reference"]
@@ -48,9 +47,15 @@ def evaluate(root, resamples, seed):
         for direction in sorted({row["direction"] for row in base}):
             groups = [[row for row in stage if row["direction"] == direction] for stage in (base, tuned)]
             jobs.append((model, direction, groups, resamples, [seed, len(jobs)]))
-    with ProcessPoolExecutor(max_workers=6) as pool:
+    with ProcessPoolExecutor(max_workers=workers) as pool:
         results = list(pool.map(analyze, jobs))
     return {"seed": seed, "resamples": resamples, "rows": results}
+
+
+def evaluate(root, resamples, seed, workers=2):
+    predictions = {(stage, model): json.loads((root / stage / model / "test.json").read_text(encoding="utf-8"))
+                   for model in ("madlad", "gemma") for stage in ("base", "tuned")}
+    return evaluate_predictions(predictions, resamples, seed, workers)
 
 
 if __name__ == "__main__":

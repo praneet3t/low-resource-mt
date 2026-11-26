@@ -95,12 +95,11 @@ def semantic_sections(path, khasi):
     rows = {(row["direction"], row["model"]): row for row in report["rows"]}
     body = []
     for direction in ("kha-en", "brx-en"):
-        line = f'<tr><th scope="row">{DIRECTIONS[direction]}</th>'
-        for model in MODELS:
+        for model, label in (("madlad", "MADLAD"), ("gemma", "Gemma")):
             row = rows[direction, model]
-            line += (f"<td>{row['f1_base']:.3f} → {row['f1_tuned']:.3f}<br>"
-                     f"<small>{row['f1_delta']:+.3f} [{row['ci95_low']:+.3f}, {row['ci95_high']:+.3f}]</small></td>")
-        body.append(line + "</tr>")
+            body.append(cells((DIRECTIONS[direction], label, f"{row['f1_base']:.3f}",
+                               f"{row['f1_tuned']:.3f}", f"{row['f1_delta']:+.3f}",
+                               f"[{row['ci95_low']:+.3f}, {row['ci95_high']:+.3f}]"), "th"))
     gemma = rows["kha-en", "gemma"]
     if khasi["chrf++_delta"] < 0 and khasi["ter_tuned"] > khasi["ter_base"] and gemma["ci95_low"] > 0:
         interpretation = ("For Gemma on Khasi→English, BERTScore rose despite lower chrF++ and higher TER. "
@@ -112,10 +111,12 @@ def semantic_sections(path, khasi):
         semantic_method=("<p>English-target BERTScore [9] averages sentence F1 using uncased DistilBERT "
                          f"(layer {report['layers']}, raw F1 without IDF or baseline rescaling). "
                          "Khasi and Bodo targets were outside this encoder’s documented coverage.</p>"),
-        semantic_table=('<table class="semantic-scores"><caption><strong>Table 4.</strong> English-target mean '
-                        'BERTScore F1, pretrained → fine-tuned. Changes show paired 95% intervals '
-                        f'({report["resamples"]:,} resamples).</caption><thead><tr><th scope="col">Direction</th>'
-                        '<th scope="col">MADLAD-400 3B</th><th scope="col">Gemma 3 1B</th></tr></thead><tbody>'
+        semantic_table=('<table class="semantic-scores"><caption><strong>Table 4.</strong> Mean sentence scores '
+                        f'on English-target holdouts ({report["resamples"]:,} paired resamples).</caption>'
+                        '<thead><tr><th rowspan="2" scope="col">Direction</th><th rowspan="2" scope="col">Model</th>'
+                        '<th colspan="4" scope="colgroup">BERTScore F1</th></tr><tr>'
+                        '<th scope="col">Pretrained</th><th scope="col">Fine-tuned</th>'
+                        '<th scope="col">Change</th><th scope="col">95% CI</th></tr></thead><tbody>'
                         + "".join(body) + "</tbody></table>"),
         semantic_discussion=f"<p>{interpretation}</p>",
         semantic_reference=('<li>[9] Zhang et al. (2020). <a href="https://arxiv.org/abs/1904.09675">'
