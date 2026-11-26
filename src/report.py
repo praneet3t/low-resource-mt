@@ -86,6 +86,45 @@ def browser_path(browser):
     raise FileNotFoundError("Install Chrome or Chromium, or pass the browser executable with --browser")
 
 
+def semantic_sections(path, khasi):
+    values = dict.fromkeys(("semantic_method", "semantic_table", "semantic_discussion", "semantic_reference",
+                            "semantic_class"), "")
+    if not path.is_file():
+        return values
+    report = read(path)
+    rows = {(row["direction"], row["model"]): row for row in report["rows"]}
+    body = []
+    for direction in ("kha-en", "brx-en"):
+        line = f'<tr><th scope="row">{DIRECTIONS[direction]}</th>'
+        for model in MODELS:
+            row = rows[direction, model]
+            line += (f"<td>{row['f1_base']:.3f} → {row['f1_tuned']:.3f}<br>"
+                     f"<small>{row['f1_delta']:+.3f} [{row['ci95_low']:+.3f}, {row['ci95_high']:+.3f}]</small></td>")
+        body.append(line + "</tr>")
+    gemma = rows["kha-en", "gemma"]
+    if khasi["chrf++_delta"] < 0 and khasi["ter_tuned"] > khasi["ter_base"] and gemma["ci95_low"] > 0:
+        interpretation = ("For Gemma on Khasi→English, BERTScore rose despite lower chrF++ and higher TER. "
+                          "As a source-blind measure, it cannot establish improved adequacy.")
+    else:
+        interpretation = ("The English-target BERTScore intervals quantify holdout sampling uncertainty. "
+                          "Contextual similarity alone cannot establish translation adequacy.")
+    values.update(
+        semantic_method=("<p>English-target BERTScore [9] averages sentence F1 using uncased DistilBERT "
+                         f"(layer {report['layers']}, raw F1 without IDF or baseline rescaling). "
+                         "Khasi and Bodo targets were outside this encoder’s documented coverage.</p>"),
+        semantic_table=('<table class="semantic-scores"><caption><strong>Table 4.</strong> English-target mean '
+                        'BERTScore F1, pretrained → fine-tuned. Changes show paired 95% intervals '
+                        f'({report["resamples"]:,} resamples).</caption><thead><tr><th scope="col">Direction</th>'
+                        '<th scope="col">MADLAD-400 3B</th><th scope="col">Gemma 3 1B</th></tr></thead><tbody>'
+                        + "".join(body) + "</tbody></table>"),
+        semantic_discussion=f"<p>{interpretation}</p>",
+        semantic_reference=('<li>[9] Zhang et al. (2020). <a href="https://arxiv.org/abs/1904.09675">'
+                            'BERTScore: Evaluating Text Generation with BERT</a>.</li>'),
+        semantic_class=" semantic",
+    )
+    return values
+
+
 def build_report(results, examples, output, browser=None):
     def artifact(group, filename):
         grouped = results / group / filename
@@ -155,6 +194,7 @@ def build_report(results, examples, output, browser=None):
         "madlad_example": case_html(examples["madlad"]["en-brx"]["reviewed"], "en", "brx"),
         "gemma_example": case_html(examples["gemma"]["kha-en"]["reviewed"], "kha", "en"),
     }
+    values.update(semantic_sections(artifact("metrics", "semantic-evaluation.json"), khasi))
     template = Template(Path(__file__).with_name("report.html").read_text(encoding="utf-8"))
     output = output.resolve()
     with TemporaryDirectory(prefix="mt-report-") as tmp:

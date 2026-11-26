@@ -36,6 +36,13 @@
   .deltas img { width: 89%; }
   .analysis p { margin-bottom: 7pt; }
   .analysis figure { margin-block: 6pt; }
+  .analysis.semantic { font-size: 10.5pt; line-height: 1.37; }
+  .semantic .deltas img, .semantic .curves img { width: 85%; }
+  .conclusion.semantic p { margin-bottom: 6pt; line-height: 1.37; }
+  .conclusion.semantic h3 { margin-top: 10pt; }
+  .semantic-scores { margin: 7pt 0; }
+  .semantic-scores th, .semantic-scores td { padding: 2pt 4pt; }
+  .semantic-scores small { font-size: 8.25pt; }
   dl { display: grid; grid-template-columns: 64pt 1fr; column-gap: 8pt; row-gap: 2pt;
     font-size: 10.5pt; line-height: 1.42; margin: 5pt 0 7pt; break-inside: avoid; }
   dt { font-weight: 600; }
@@ -89,10 +96,11 @@
     </tbody>
   </table>
 
-  <p>Training capped the encoded input prompt or source and the target segment at 256 tokens each. Both runs selected the final checkpoint by validation loss, evaluated at quarter-epoch intervals. All four systems used greedy BF16 decoding with a cap of 256 new tokens. The labeled holdout supports case-sensitive SacreBLEU 13a and chrF++ with word bigrams [5, 6]. The $official_count official inputs supplied with the task data have no references, so we saved their predictions separately and report scores only for the labeled holdout.</p>
+  <p>Training capped encoded input and target segments at 256 tokens each. Checkpoint selection used quarter-epoch validation loss. All systems used greedy BF16 decoding with up to 256 new tokens. We scored the labeled holdout with case-sensitive SacreBLEU 13a and chrF++ with word bigrams [5, 6]. The $official_count source-only official predictions were saved separately.</p>
+  $semantic_method
 </section>
 
-<section class="analysis">
+<section class="analysis$semantic_class">
   <h2>3. Results and discussion</h2>
   <table class="scores">
     <caption><strong>Table 3.</strong> Pretrained → fine-tuned corpus scores on the labeled holdout. <em>n</em> is the number of sentence pairs per direction.</caption>
@@ -103,7 +111,8 @@
     <tbody>$score_rows</tbody>
   </table>
 
-  <p>Tuned MADLAD leads in all four directions (Table 3). Into Bodo it gains $shift chrF++ points while BLEU stays near 2, consistent with more character overlap and few exact word sequences. Gemma loses chrF++ from Khasi to English and BLEU into Bodo (Figure 3). Size, pretraining and input format confound the architecture comparison. Both runs lowered validation loss (Figure 4).</p>
+  <p>Tuned MADLAD leads in all four directions. Into Bodo, it gains $shift chrF++ points with BLEU near 2. Gemma loses chrF++ from Khasi to English and BLEU into Bodo. Size, pretraining and input format confound the comparison. Both runs lowered validation loss.</p>
+  $semantic_table
   <figure class="deltas">
     <img src="improvements.svg" alt="Changes in BLEU and chrF++ for both models across four directions">
     <figcaption><strong>Figure 3.</strong> Fine-tuned minus pretrained scores in points on the labeled holdout.</figcaption>
@@ -113,11 +122,11 @@
     <figcaption><strong>Figure 4.</strong> Training and validation cross-entropy. The objectives and tokenizers differ, so absolute loss values are specific to each model.</figcaption>
   </figure>
 
-  <p>From $resamples paired sentence resamples [7], Gemma’s 95% chrF++ change intervals were $bodo_ci into Bodo and $khasi_ci from Khasi into English. These intervals reflect holdout sampling. Into Bodo, translation edit rate (TER [8]) worsened despite the chrF++ gain (Section 4).</p>
-  <p>A separate pretrained pilot used $pilot_n examples per direction and a $pilot_cap-token cap. Gemma’s 1-, 3- and 5-shot prompts reached $lexical mean chrF++ with inverse-frequency-weighted source overlap, $random with random same-direction examples and $zero_shot zero-shot. MADLAD beam 20 scored $beam_20 versus $beam_1 for greedy decoding ($beam_seconds_20 vs. $beam_seconds_1 s). Means weight directions equally.</p>
+  <p>Gemma’s 95% chrF++ change intervals from $resamples paired resamples [7] were $bodo_ci into Bodo and $khasi_ci from Khasi into English. Into Bodo, TER [8] rose despite the chrF++ gain.</p>
+  <p>The pretrained pilot used $pilot_n pairs per direction and a $pilot_cap-token cap. Mean chrF++ was $lexical for lexical retrieval, $random for random retrieval (1, 3 and 5 shots), and $zero_shot zero-shot. MADLAD beam 20 scored $beam_20 versus $beam_1 greedy ($beam_seconds_20 vs. $beam_seconds_1 s).</p>
 </section>
 
-<section>
+<section class="conclusion$semantic_class">
   <h2>4. Error analysis and conclusion</h2>
   <p>For Gemma into Bodo, outputs flagged for the wrong majority script fell ($wrong_script out of $bodo_n), while repeated-trigram flags rose ($repetition). The chrF++ increase ($bodo_chrf) coincided with a much higher TER ($bodo_ter). An output can acquire the expected script and match more reference fragments while repeating enough material to require many more edits.</p>
 
@@ -127,7 +136,8 @@
 
   <h3>Gemma · Khasi → English</h3>
   <dl>$gemma_example</dl>
-  <p>Adaptation recovers the name and clock time, but omits coming home and changes the relationship between the subject and time. This illustrates why retaining individual details can coexist with a lower translation score across the direction.</p>
+  <p>Adaptation recovers the name and time, omits coming home, and changes the relation between the subject and time. Individual details can improve even as chrF++ falls across the direction.</p>
+  $semantic_discussion
 
   <h3>Limitations and conclusion</h3>
   <p>The labeled sentences come from the same corpus as training, with one reference per source. Near duplicates and pretraining overlap were unmeasured. One seed, two languages and the absence of bilingual adequacy judgments limit generalization. MADLAD improved consistently under this setup. The mixed Gemma outcomes show why script checks, repetition diagnostics, edit rate and example inspection matter alongside overlap scores.</p>
@@ -142,6 +152,7 @@
     <li>[6] Popović (2017). <a href="https://aclanthology.org/W17-4770/">chrF++: Words Helping Character N-grams</a>.</li>
     <li>[7] Koehn (2004). <a href="https://aclanthology.org/W04-3250/">Statistical Significance Tests for Machine Translation Evaluation</a>.</li>
     <li>[8] Snover et al. (2006). <a href="https://aclanthology.org/2006.amta-papers.25/">A Study of Translation Edit Rate with Targeted Human Annotation</a>.</li>
+    $semantic_reference
   </ol>
 </section>
 </html>
